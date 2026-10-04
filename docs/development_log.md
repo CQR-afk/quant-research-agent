@@ -273,3 +273,62 @@ v1 每股特征中位数与每股中位 close/volume 的 Pearson 描述性相关
 - `compileall` 通过；`uv pip check` 检查 107 个包全部兼容。没有生成 2024+ 预测/指标；未运行 VectorBT、参数搜索、universe 扩展或其他模型，也未接入 GPT/news/Qwen/Hermes/交易。
 
 Step 4.3 到此停止，等待后续阶段指令。
+
+## 2026-10-05 — Step 4.4：横截面目标与排序评价对齐
+
+### 检查点、固定条件与数据边界
+
+- 开始前核对 Step 4.3 工作区、81 项测试、Python 3.14.6 环境；`uv pip check` 检查 107 个包全部兼容。`.env`、`data/`、`artifacts/`、`.venv/` 均由 `.gitignore` 排除且没有进入 Git。
+- 按要求建立本地检查点 `636c26f chore: checkpoint step 4.3 walk-forward feature diagnostics`；没有远程仓库，没有 push。当前 Step 4.4 变更仍未提交。
+- 研究只使用 Step 4.3 materialized 的 `ashare_daily_v1` development-only 数据和 11 股 BaoStock qfq 快照。Arrow 日期过滤仅保留 prediction/label end 均早于 2024-01-01 的行。Legacy 2024–2025 test 未读取；2026+ holdout 未下载、读取或评价，`used=false`。
+- 固定 LightGBM LGBMRegressor 参数、seed、Feature v1、5-session target horizon 和三个 fold；没有参数搜索或修改特征。初次真实命令在 A/B/C common-key 合并校验处安全中止，排查后将模型 native fit target 与统一评价所用 raw return 字段显式分离，再完成唯一有效 comparison report。没有把中止尝试当作研究结果。
+
+### Target Builder 与数据集
+
+- A：保留 `target_5d_h5_v1`，定义仍为每只股票自己的 `close.shift(-5)/close-1`。
+- B：新增 `target_5d_pool_excess_v1 = raw target - same prediction_date valid pool mean`；用 pool 专名，不声称代表市场超额收益。
+- C：新增 `target_5d_cs_rank_v1 = 2 * rank(method="average", pct=True) - 1`，同日按实际 raw return 排序。Ties 使用平均秩。
+- B/C 每日有效 raw target 少于 8 只时整日目标均为 NaN。无未来填充、零填补或其他日期填充。三 target 共用同一原始 `label_end_date`；构造过程中所有 v1 feature 列逐值不变，target 名称被拒绝作为 feature 输入。
+- 每个目标有独立 Parquet、manifest、dataset version。三份数据各 15,867 行；均有 15,867 个有效目标，cross-section 不足门槛的日期为 0。Manifest 标明 feature/target version、精确定义、horizon=5、minimum breadth=8、中心/排名方式、development cap、evaluation role 及 PIT/survivorship 限制。
+
+### 命令、实验与结果
+
+实际命令：
+
+```powershell
+quantlab research target-study --target-version all
+```
+
+目标实验 IDs：
+
+- Raw: `walkforward_target_raw_v1_f120d1fa7981`
+- Pool Excess: `walkforward_target_pool_excess_v1_c8dd2bb960d6`
+- CS Rank: `walkforward_target_cs_rank_v1_601b71a85ac3`
+
+所有目标沿用同样的 expanding fold 边界、5-session embargo 与 label-end purge；每折 A/B/C 的训练及验证行数相同。Fold1 Train 2018-04-02–2020-12-17 共 7,156 行，Validation 2021-01-04–2021-12-17 共 2,563 行 / 233 日期；Fold2 Train 至 2021-12-17 共 9,829 行，Validation 2022-01-04–2022-12-16 共 2,552 行 / 232 日期；Fold3 Train 至 2022-12-16 共 12,491 行，Validation 2023-01-03–2023-12-15 共 2,552 行 / 232 日期。purged train/validation 行分别 110/110、110/110、110/55。共同键确认 symbol、prediction date、label end date 和 raw target 一致，每折覆盖 11 股。
+
+主要指标在完全相同的 A∩B∩C 验证键上计算：模型输出只被当成横截面 score，并与 raw `target_5d` 计算 Rank IC。逐折指标如下：
+
+| Fold | Raw Rank IC / RankICIR / 正日比例 | Pool Excess Rank IC / RankICIR / 正日比例 | CS Rank Rank IC / RankICIR / 正日比例 |
+|---|---|---|---|
+| 2021 | .05045 / .14158 / 56.22% | -.05076 / -.15121 / 42.49% | -.04663 / -.14430 / 44.21% |
+| 2022 | .04620 / .12296 / 53.88% | .03440 / .08670 / 51.29% | .05600 / .15417 / 56.03% |
+| 2023 | .02500 / .07523 / 49.14% | -.04036 / -.11497 / 45.26% | -.01877 / -.05914 / 46.12% |
+
+等权跨折 Rank IC / RankICIR / positive-day ratio：Raw `.04055 / .11326 / 53.08%`；Pool Excess `-.01891 / -.05983 / 46.35%`；CS Rank `-.00313 / -.01642 / 48.79%`。跨折 Pearson IC 均值分别为 `.06755 / -.00661 / .00926`。Pearson、rank daily IC、NW lag=5 standard error/t、月度和季度 Rank IC 均写入 report。NW 仅用于重叠标签相关性诊断。
+
+Native Target MAE/RMSE（均明确为 `NOT CROSS-TARGET COMPARABLE`）：Raw `.04405/.05740, .04253/.05486, .03144/.03988`；Pool Excess `.03507/.04662, .02815/.03781, .02043/.02795`；CS Rank `.51167/.59718, .49841/.58082, .50685/.58571`。Rank score 对 raw return 的 common investment metrics 不计算 MAE/RMSE。
+
+Target diagnostics：Pool Excess 在 1,452 个可用预测日上的 maximum absolute daily mean 为 `1.77e-17`；CS Rank 的同日顺序在 1,452 日都与 raw realized return 单调一致。11-stock截面按指定 `rank_pct` 变换后的 rank target 日均值为 `.09091`，实际 min/max `-.81818 / 1.0`，与平均秩离散端点一致。
+
+按预定候选条件评估，Pool Excess 和 CS Rank 都只有 1/3 folds 的 Rank IC 为正，跨折 mean Rank IC 与 positive Rank IC day ratio 也都低于 Raw control，故都不符合升级条件。最终为 **`no_target_upgrade`**、选中保留 `target_5d_h5_v1`。该结果不是回测或投资有效性判断。
+
+报告 `artifacts/reports/target_comparison_28b36e885c5a.json`，逐日 target 构造检查 `artifacts/reports/target_cross_section_diagnostics_28b36e885c5a.csv`。Target B/C datasets 分别位于 `data/processed/ashare_research_v1_target_pool_excess_dev.parquet` 和 `data/processed/ashare_research_v1_target_cs_rank_dev.parquet`，Raw version 为同前缀 `target_raw_dev.parquet`；文件和实验模型都由 `.gitignore` 排除。
+
+### 自动化测试与边界
+
+- 新增 11 项离线 target-study 测试；全套 **92 passed / 0 failed**。覆盖 Raw Target 不变、Pool Excess 定义与日均值、CS rank tie/单调、最小截面、label end 和 feature 不变、duplicate/目标输入保护、2024 行过滤/target dataset 幂等、common-key 一致性、unified score-vs-raw IC、native metrics 非可比标记、固定参数和未使用 holdout 守卫。
+- `compileall` 通过；`uv pip check`：107 packages compatible；target-study CLI help 与真实三目标命令运行成功。
+- Baseline v1 负 Legacy Test、Step4.3 v2 negative Rank IC、qfq non-PIT 和 11 股工程池 survivorship bias 都继续保留。未扩 Universe、未看 2024/2025 或 2026+、未回测、未调参、未换模型、未进入 AI layer。
+
+Step 4.4 达到停止条件，到此暂停。

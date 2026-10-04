@@ -25,6 +25,8 @@ from quantlab.research.gate import evaluate_dataset_readiness
 from quantlab.research.price_basis import compare_price_bases
 from quantlab.research.walk_forward import run_walk_forward_experiment
 from quantlab.research.features import FEATURE_VERSION, FEATURE_V2_VERSION
+from quantlab.research.target_study import run_target_study
+from quantlab.research.targets import DEFAULT_MINIMUM_TARGET_CROSS_SECTION, TARGET_VERSIONS
 
 
 def _safe_ticker(ticker: str) -> str:
@@ -148,6 +150,14 @@ def build_parser() -> argparse.ArgumentParser:
     walk_forward.add_argument("--manifest-v1", required=True)
     walk_forward.add_argument("--dataset-v2", required=True)
     walk_forward.add_argument("--manifest-v2", required=True)
+    target_study = research_commands.add_parser(
+        "target-study", help="compare raw, pool-excess, and cross-sectional rank targets on fixed pre-2024 folds"
+    )
+    target_study.add_argument("--dataset", default=None, help="development-only ashare_daily_v1 Parquet; defaults to Step 4.3 snapshot")
+    target_study.add_argument("--manifest", default=None, help="matching development-only dataset manifest")
+    target_study.add_argument("--target-version", required=True, choices=("all", *TARGET_VERSIONS))
+    target_study.add_argument("--minimum-target-cross-section", type=int,
+                               default=DEFAULT_MINIMUM_TARGET_CROSS_SECTION)
 
     model = subparsers.add_parser("model", help="train and inspect research models")
     model_commands = model.add_subparsers(dest="model_command", required=True)
@@ -255,6 +265,20 @@ def _run_research(args) -> None:
             "feature_v1_experiment_id": report["feature_v1"]["experiment_id"],
             "feature_v2_experiment_id": report["feature_v2"]["experiment_id"],
             "candidate_assessment": report["candidate_assessment"],
+        }, ensure_ascii=False, default=str, indent=2))
+    elif args.research_command == "target-study":
+        result = run_target_study(
+            dataset_path=args.dataset, manifest_path=args.manifest,
+            target_version=args.target_version,
+            minimum_cross_section=args.minimum_target_cross_section,
+        )
+        print(json.dumps({
+            "status": result["status"],
+            "target_versions_run": result["target_versions_run"],
+            "datasets": result["datasets"],
+            "experiments": result["experiments"],
+            "report_path": result["report_path"],
+            "candidate_assessment": result["candidate_assessment"],
         }, ensure_ascii=False, default=str, indent=2))
 
 

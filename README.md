@@ -86,6 +86,7 @@ quantlab research build-dataset --universe config/ashare_universe_qfq_pilot.json
 quantlab research readiness --dataset data/processed/ashare_research_dataset_baostock_qfq_v1.parquet --manifest data/processed/ashare_research_dataset_baostock_qfq_v1.manifest.json
 quantlab model train --model lightgbm --dataset data/processed/ashare_research_dataset_baostock_qfq_v1.parquet --manifest data/processed/ashare_research_dataset_baostock_qfq_v1.manifest.json --name "Baseline Real Market Experiment v1"
 quantlab research walk-forward --dataset-v1 data/processed/ashare_research_dataset_baostock_qfq_v1.parquet --manifest-v1 data/processed/ashare_research_dataset_baostock_qfq_v1.manifest.json --dataset-v2 data/processed/ashare_research_dataset_baostock_qfq_v2_scale_invariant_dev_2018_2023.parquet --manifest-v2 data/processed/ashare_research_dataset_baostock_qfq_v2_scale_invariant_dev_2018_2023.manifest.json
+quantlab research target-study --target-version all
 
 # 对比同一 Provider 的 none/qfq 价格；跳变只会被标记，不会自动解释或修复
 quantlab data compare-bases --provider baostock --ticker 000001.SZ 600519.SH 300750.SZ --start 20240101 --end 20240331 --jump-threshold 0.2
@@ -107,8 +108,16 @@ qfq 是 2026-10-04 获取的 BaoStock 供应商快照；历史公司行动信息
 
 ## Step 4.3：Walk-forward 与 scale-invariant 特征诊断
 
-当前 checkpoint 为 `661596e chore: checkpoint step 4.2 real lightgbm baseline`；Step 4.3 代码与文档仍为未提交工作区改动。原 Baseline Real Market Experiment v1 保持不变，其 2024–2025 Test Pearson IC `-0.08343`、Rank IC `-0.06794` 仍保留。该区间现在登记为 `LEGACY_OBSERVED_TEST`，本阶段没有为 v2 生成任何 2024 年及以后预测或指标。
+Step 4.3 检查点 `636c26f chore: checkpoint step 4.3 walk-forward feature diagnostics` 已在 Step 4.4 前建立；当前 Step 4.4 修改留在工作区。原 Baseline Real Market Experiment v1 保持不变，其 2024–2025 Test Pearson IC `-0.08343`、Rank IC `-0.06794` 仍保留。该区间登记为 `LEGACY_OBSERVED_TEST`，本阶段没有为任何新目标生成 2024 年及以后预测或指标。
 
 新增 `ashare_daily_v2_scale_invariant`，不包含绝对价格/成交量均线或 symbol ID，target 仍为 `target_5d`。在同一 11 股 BaoStock qfq 快照和固定 LightGBM 参数下，使用 2018–2023 的三个 expanding-window folds 对比 v1/v2。每折均按全局日期切分、五期 `label_end_date` purge 和 5-session embargo；v1/v2 验证 sample keys、target 和 label end date 完全相同。完整结果见 [`artifacts/reports/walkforward_comparison_2ee1453e2be5.json`](artifacts/reports/walkforward_comparison_2ee1453e2be5.json)，逐折产物在 `artifacts/experiments/walkforward_*/`。
 
 本轮 v2 误差均值略低（MAE `0.03889` 对 `0.03934`；RMSE `0.05038` 对 `0.05071`），但横截面方向诊断变差：v1 的 fold mean Rank IC 为 `0.05045 / 0.04620 / 0.02500`，v2 为 `-0.00761 / -0.02884 / -0.01516`；正 Rank IC 日比例均值为 `53.08%` 对 `46.91%`。因此 v2 标记 `development_only`，不是候选模型或已验证模型。v1 的跨股票尺度审计发现，MA_5 与每股中位收盘价相关系数 `0.9999998`，Volume_MA20 与每股中位成交量相关系数 `0.9999115`（11 股描述性诊断）。Step 4.3 只做研究诊断，不做参数搜索、策略回测或扩大股票池；详情见 [`docs/project_status.md`](docs/project_status.md)。
+
+## Step 4.4：横截面目标研究
+
+Step 4.4 沿用 Feature v1、固定 LightGBM 参数及 2018–2023 三个 expanding folds，只改变连续监督目标。`quantlab research target-study --target-version all` 从 Step 4.3 预先隔离的 development-only 数据集派生 Raw Return、`target_5d_pool_excess_v1` 和 `target_5d_cs_rank_v1` 三个版本。Pool Excess 是每只股票未来五观察期收益减去同日工程池有效收益均值；CS Rank 使用同日 `rank(method="average", pct=True)` 并变换为 `2*rank_pct-1`。B/C 要求每个预测日至少 8 只有效股票；不足时整日目标保留 NaN。
+
+在 A∩B∩C 完全相同的验证键上，三折 Rank IC（Raw / Pool Excess / CS Rank）为 `0.05045 / -0.05076 / -0.04663`、`0.04620 / 0.03440 / 0.05600`、`0.02500 / -0.04036 / -0.01877`。跨折均值为 `0.04055 / -0.01891 / -0.00313`，正 Rank IC 日比例为 `53.08% / 46.35% / 48.79%`。两种新目标都未满足预设候选条件，结论为 **`no_target_upgrade`**，保留 Raw Return control。目标构造检查中，Pool Excess 1,452 个有效日期的最大绝对日均值为 `1.77e-17`；CS Rank 对原收益的逐日排序单调一致。
+
+报告为 [`target_comparison_28b36e885c5a.json`](artifacts/reports/target_comparison_28b36e885c5a.json)，逐日目标构造诊断为 `artifacts/reports/target_cross_section_diagnostics_28b36e885c5a.csv`。三个独立实验和带版本的数据集清单均保存在本地 `artifacts/` 与 `data/processed/`，并由 `.gitignore` 排除。测试环境仍是 Python 3.14.6。qfq 是供应商历史快照而非 point-in-time 还原；当前 11 股工程池存在幸存者偏差。没有读取 Legacy Test 或 2026+ Holdout，也没有进行回测、调参或扩大 Universe。

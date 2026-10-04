@@ -1,12 +1,45 @@
 # Quant Research Agent 项目状态
 
-**状态核对日期：2026-10-04**
+**状态核对日期：2026-10-05**
 **项目目录：`D:\Quantification`**
 **定位：A 股优先、港股其次的本地研究与预测平台；不连接券商账户、不自动下单。**
 
-## Step 4.3 当前状态
+## Step 4.4 当前状态
 
-Step 4.3 已完成并停止于预定范围：新增 scale-invariant v2 特征、development-only walk-forward 服务、样本/诊断报告和治理元数据。没有重新评估 2024–2025，没有创建新 holdout 行情，没有运行回测、调参或扩大股票池。Step 4.2 固定检查点为 `661596e chore: checkpoint step 4.2 real lightgbm baseline`；Step 4.3 修改仍在工作区，尚未提交。
+Step 4.3 检查点已按要求提交：`636c26f chore: checkpoint step 4.3 walk-forward feature diagnostics`。没有 remote 或 push。Step 4.4 代码、测试和文档现在处于未提交工作区；本阶段只研究目标定义，保留 Feature v1、固定 LightGBM 参数和原三折。
+
+主实验命令为 `quantlab research target-study --target-version all`，数据只读自 Step 4.3 materialized 的 `ashare_daily_v1` 2018–2023 development snapshot。新目标数据集分别为 `ashare_research_v1_target_raw_dev.parquet`、`ashare_research_v1_target_pool_excess_dev.parquet` 和 `ashare_research_v1_target_cs_rank_dev.parquet`，每个都有独立 manifest / dataset version。每个 manifest 明确写入 feature/target version、精确定义、5 observation horizon、minimum cross-section=8、development cap=2023-12-31、`development_walk_forward` role 及 PIT 限制。
+
+目标定义：A=`target_5d_h5_v1` 原样保留现有 `close.shift(-5)/close - 1`；B=`target_5d_pool_excess_v1` 为同一 prediction date 有效 A 股工程池 raw return 减去该日 pool mean（不是市场超额收益）；C=`target_5d_cs_rank_v1` 为同日 raw return 按 `rank(method="average", pct=True)` 计算后乘 2 减 1。B/C 在有效收益少于 8 只的日期均为 NaN，不填补。三者 `label_end_date` 与原始 target 完全相同，target Builder 不改动任何 feature 列；模型只接收固定 v1 features。
+
+所有目标在 common sample 上用模型 score 对真实 raw `target_5d` 计算 Pearson/Rank IC，Rank IC 为主要指标。common keys 要求同 symbol、prediction date、label end date、且原始收益一致；每折 common/各目标 native 行数、symbol、日期如下：
+
+| Fold | Train 实际区间 / 行数（A/B/C） | Validation 实际区间 | Common 与 native 验证样本 |
+|---|---|---|---|
+| 1 | 2018-04-02–2020-12-17 / 7,156 | 2021-01-04–2021-12-17 | 2,563 行、11 股、233 日期 |
+| 2 | 2018-04-02–2021-12-17 / 9,829 | 2022-01-04–2022-12-16 | 2,552 行、11 股、232 日期 |
+| 3 | 2018-04-02–2022-12-16 / 12,491 | 2023-01-03–2023-12-15 | 2,552 行、11 股、232 日期 |
+
+三个版本的各折 native 验证行数与 common 行数完全相同；时间边界一致，purge Train/Validation 为 110/110、110/110、110/55 行，均使用 5-session embargo、不 shuffle。
+
+| Fold | Raw Rank IC / RankICIR / 正日比 | Pool Excess Rank IC / RankICIR / 正日比 | CS Rank Rank IC / RankICIR / 正日比 |
+|---|---|---|---|
+| 2021 | .05045 / .14158 / 56.22% | -.05076 / -.15121 / 42.49% | -.04663 / -.14430 / 44.21% |
+| 2022 | .04620 / .12296 / 53.88% | .03440 / .08670 / 51.29% | .05600 / .15417 / 56.03% |
+| 2023 | .02500 / .07523 / 49.14% | -.04036 / -.11497 / 45.26% | -.01877 / -.05914 / 46.12% |
+| 等权跨折均值 | .04055 / .11326 / 53.08% | -.01891 / -.05983 / 46.35% | -.00313 / -.01642 / 48.79% |
+
+Pearson IC 跨折均值 Raw / Pool Excess / CS Rank 为 `.06755 / -.00661 / .00926`。所有模型 Newey–West lag=5 的 Pearson/Rank IC mean、标准误及 t diagnostic 均保存在统一 JSON 报告中；这些只诊断重叠标签相关性，不是显著性或投资有效性的证明。跨目标 native MAE/RMSE 各自在其目标单位下单独报告，并标记 `NOT CROSS-TARGET COMPARABLE`；对于以横截面 rank 为目标的模型，不报告 score-to-return MAE/RMSE。
+
+native fit 的 MAE/RMSE（不可跨目标比较）：Raw 三折 `.04405/.05740, .04253/.05486, .03144/.03988`；Pool Excess `.03507/.04662, .02815/.03781, .02043/.02795`；CS Rank `.51167/.59718, .49841/.58082, .50685/.58571`。分布、p01/p10/median/p90/p99 以及每折月/季度 Rank IC 在报告中逐折保存。Pool Excess 在 1,452 个可用横截面日期的最大绝对日均值为 `1.77e-17`，全部通过 `1e-12` 中心性检查；CS Rank 在全部 1,452 日与 raw return 单调一致。11 股同截面的 rank target 分布均值为 `0.09091`、实际端点约 `-0.81818` 到 `1.0`，符合定义，不应期待 rank_pct 离散中心化后的样本均值严格为零。
+
+候选筛选 A/B/C/D 对 Pool Excess 和 CS Rank 均未通过：两者各只有 1/3 折的 common Rank IC 为正、mean Rank IC 低于 Raw control、正 Rank IC 日比例低于 control，且另两折为负。最终为 **`no_target_upgrade`**，选择并保留 Raw Return；不进入扩大 Universe。实验报告 `artifacts/reports/target_comparison_28b36e885c5a.json`，逐日期中性与 breadth 诊断 `artifacts/reports/target_cross_section_diagnostics_28b36e885c5a.csv`。实验 IDs：`walkforward_target_raw_v1_f120d1fa7981`、`walkforward_target_pool_excess_v1_c8dd2bb960d6`、`walkforward_target_cs_rank_v1_601b71a85ac3`。
+
+本阶段未访问 2024–2025 `LEGACY_OBSERVED_TEST`；也没有下载、读取或评价 2026+ `future_sealed_holdout`，治理中的 `used=false` 保持不变。没有回测、调参、换模型或扩展 11 股样本。完整离线测试 **92 passed / 0 failed**，`compileall` 通过，`uv pip check` 检查 107 个包全部兼容。qfq 是非 point-in-time vendor snapshot，工程股票池存在 survivorship bias。Baseline v1 的负 Legacy Test `Pearson IC=-0.08343 / Rank IC=-0.06794` 与 Step 4.3 v2 三折负 Rank IC 均保留，未用来挑选本阶段目标。
+
+## Step 4.3 结果（历史记录）
+
+Step 4.3 已完成并停止于预定范围：新增 scale-invariant v2 特征、development-only walk-forward 服务、样本/诊断报告和治理元数据。没有重新评估 2024–2025，没有创建新 holdout 行情，没有运行回测、调参或扩大股票池。其检查点 `636c26f chore: checkpoint step 4.3 walk-forward feature diagnostics` 已在 Step 4.4 开始前提交。
 
 Baseline Real Market Experiment v1 (`20261004T120849Z_2cb6448746`) 保持 immutable。原始 2024–2025 测试 Pearson IC `-0.08343`、Rank IC `-0.06794` 保留，登记为 `LEGACY_OBSERVED_TEST`。治理登记在 `config/research_governance.json`，future sealed holdout 从 `2026-01-01` 起定义为协议元数据且 `used=false`。Walk-forward 报告声明未访问 baseline 测试数据、未生成 2024 年及以后预测/指标。基线原始 manifest 未修改。
 
@@ -34,7 +67,7 @@ Step 4.2 已在 Step 4.1 多源数据基础上完成：BaoStock qfq 真实行情
 
 ## 工程与环境
 
-- Step 4.2 开始前的本地检查点：`661596e chore: checkpoint step 4.2 real lightgbm baseline`。无远程仓库，没有推送；Step 4.3 实施后工作区有未提交改动。
+- Step 4.2 检查点：`661596e chore: checkpoint step 4.2 real lightgbm baseline`。无远程仓库，没有推送。
 - Python：`.venv` 中 Python 3.14.6。未迁移或卸载系统 Python。
 - 关键包：NumPy 2.5.3、Pandas 3.0.6、scikit-learn 1.9.1、LightGBM 4.7.0、DuckDB 1.5.6、PyArrow 25.0.1、AKShare 1.19.1、BaoStock 0.9.4、Tushare 1.4.29、exchange-calendars 4.13.2、VectorBT 1.1.1、Numba 0.68.0、OpenAI SDK 3.24.0、yfinance 1.7.0。
 - `uv pip check --python .venv\Scripts\python.exe` 检查 107 个已安装包，全部兼容。`compileall` 通过；全套 unittest 为 **62 passed**。
