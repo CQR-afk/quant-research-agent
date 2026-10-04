@@ -149,3 +149,7 @@ LightGBM 2024 年 MAE/RMSE 为 0.03739/0.05646，Pearson/RankIC 均值 -0.03977/
 ## Step 4.5 执行状态
 
 Step 4.4 检查点 `c4ca573 chore: checkpoint step 4.4 cross-sectional target study` 已建立，提交前全套 92 项测试通过，`uv pip check` 的 107 个包兼容。Step 4.5 在候选 Universe 冻结之前停止：BaoStock 0.9.4 登录成功，但全量证券基础资料/行业元数据查询在 30 秒以上仍未返回；AKShare 1.19.1 的 SSE/SZSE A 股列表请求失败于 `ProxyError`。Tushare 未配置凭据。尚无候选记录、U50/U100 清单或新增行情；没有继续进入特征或模型运行。U11 control 未改动。执行记录见 [`step_4_5_universe_expansion.md`](step_4_5_universe_expansion.md)。后续需要先恢复到 BaoStock 或交易所列表端点的网络访问，再从实际返回的元数据构建候选顺序。
+
+### Step 4.5R 更新（2026-10-05）
+
+已确认 Python 大小写代理变量指向无响应的 loopback:9；WinINET 未启用代理、WinHTTP 为直连；DNS 正常。BaoStock 0.9.4 登录、单股基础资料与 2018-01-01 日期参数的单股行业查询成功，并取得真实字段名；`query_stock_basic()` 全量查询 60 秒外部看门狗超时，全行业查询 15 秒超时。AKShare SSE/SZSE 列表函数均经配置代理失败于 `ProxyError`。SSE 页面仅在诊断性直连请求中返回 200，SZSE 页面直连 ReadTimeout；没有使用直连下载数据或修改全局网络设置。项目内没有官方证券列表 CSV/Excel 文件。故状态仍是 `metadata_access_still_blocked`，没有 Security Master 或候选清单。全套 92 项测试通过，Python 3.14.6，107 个包兼容。详见 [`step_4_5_universe_expansion.md`](step_4_5_universe_expansion.md)。

@@ -4,6 +4,10 @@
 
 按要求先提交 Step 4.4 本地检查点 `c4ca573`。92 项 unittest 通过，`uv pip check` 检查 107 个包全部兼容。之后检查到 BaoStock SDK 0.9.4 可登录，但全量股票基础资料/行业请求持续无响应；AKShare 1.19.1 的 SSE/SZSE A 股上市清单请求失败于代理错误。Tushare 缺少凭据。没有可验证的候选证券元数据，因此没有冻结候选池、下载新行情或训练/评估；U11 control、Walk-forward 切分及实验产物均未改动。完整限制与恢复条件见 [`step_4_5_universe_expansion.md`](step_4_5_universe_expansion.md)。
 
+## 2026-10-05 — Step 4.5R connectivity recovery
+
+Python 环境的 HTTP/HTTPS/ALL 代理指向回环端口 9，但该端口无服务响应；DNS 解析正常，WinINET 未启用代理且 WinHTTP 为直连。通过已配置代理运行的 AKShare 1.19.1 SSE/SZSE 列表函数均在约 2 秒返回 `ProxyError`。BaoStock SDK 0.9.4 正常登录；单股基础资料字段为 `code, code_name, ipoDate, outDate, type, status`，单股日期行业字段为 `updateDate, code, code_name, industry, industryClassification`，各返回 1 条。全量 basic 请求经 60 秒看门狗及全量 industry 经 15 秒看门狗终止，均未获得完整 schema/数据。离线项目中没有有来源的证券列表表格文件。测试仍为 92/92 通过，环境 107 packages compatible。未修改代码、基线或实验产物；没有获取任何股票行情或建立候选池。由于没有获准的直接源访问，结果为 `metadata_access_still_blocked`，后续需修复进程代理或获批 direct route。
+
 ## 2026-10-04 — Step 3：A 股数据管线与本地研究数据库
 
 ### 实施内容
