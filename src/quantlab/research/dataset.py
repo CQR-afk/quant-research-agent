@@ -218,7 +218,14 @@ def build_research_dataset(
         "feature_parameters": FEATURE_PARAMETERS,
         "target": "target_5d = close.shift(-5) / close - 1",
         "target_horizon_observations": 5,
-        "point_in_time_limit": "No point-in-time corporate-action reconstruction; provider history may be revised and unadjusted price returns exclude distributions.",
+        "target_version": "target_5d_h5_v1",
+        "adjustment_snapshot_time_by_symbol": ({
+            str(symbol): pd.to_datetime(group["downloaded_at"], utc=True, errors="coerce").max().isoformat()
+            for symbol, group in bars.groupby("symbol", sort=True)
+            if "downloaded_at" in group and pd.to_datetime(group["downloaded_at"], utc=True, errors="coerce").notna().any()
+        } if len(bars) else {}),
+        "point_in_time_status": "NOT_POINT_IN_TIME" if adjustment != "none" else "UNADJUSTED_VENDOR_SNAPSHOT",
+        "point_in_time_limit": "No point-in-time corporate-action reconstruction; provider adjusted history is a vendor snapshot and may be revised. Unadjusted price returns exclude distributions.",
         "survivorship_bias_note": pool["survivorship_bias_note"],
         "dataset_rows": len(dataset),
         "feature_complete_rows": int(dataset[FEATURE_COLUMNS].notna().all(axis=1).sum()) if len(dataset) else 0,
@@ -227,6 +234,7 @@ def build_research_dataset(
         "dataset_path": str(output_path.resolve()),
         "coverage": coverage_records,
     }
+    manifest["dataset_version"] = manifest["data_version"]
     output_path.parent.mkdir(parents=True, exist_ok=True)
     temporary = output_path.with_name(f".{output_path.stem}.{uuid.uuid4().hex}.tmp.parquet")
     dataset.to_parquet(temporary, index=False)

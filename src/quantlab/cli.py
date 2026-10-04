@@ -22,6 +22,7 @@ from quantlab.providers.router import ProviderRouter
 from quantlab.experiments import evaluate_saved_experiment, list_experiments, train_lightgbm
 from quantlab.research.dataset import build_research_dataset, dataset_status
 from quantlab.research.gate import evaluate_dataset_readiness
+from quantlab.research.price_basis import compare_price_bases
 
 
 def _safe_ticker(ticker: str) -> str:
@@ -117,6 +118,12 @@ def build_parser() -> argparse.ArgumentParser:
     reconcile.add_argument("--start", type=_parse_date, required=True)
     reconcile.add_argument("--end", type=_parse_date, required=True)
     reconcile.add_argument("--adjustment", choices=("none", "qfq", "hfq"), default="none")
+    compare = data_commands.add_parser("compare-bases", help="compare none/qfq prices and flag mechanical jumps")
+    compare.add_argument("--ticker", nargs="+", required=True)
+    compare.add_argument("--provider", required=True)
+    compare.add_argument("--start", type=_parse_date, default=None)
+    compare.add_argument("--end", type=_parse_date, default=None)
+    compare.add_argument("--jump-threshold", type=float, default=0.20)
 
     research = subparsers.add_parser("research", help="build and inspect model-ready datasets")
     research_commands = research.add_subparsers(dest="research_command", required=True)
@@ -125,6 +132,7 @@ def build_parser() -> argparse.ArgumentParser:
     build_dataset.add_argument("--end", type=_parse_date, default=None)
     build_dataset.add_argument("--adjustment", choices=("none", "qfq", "hfq"), default=None)
     build_dataset.add_argument("--provider", default=None)
+    build_dataset.add_argument("--universe", default=None)
     build_dataset.add_argument("--output", default=None, help="optional output Parquet path")
     research_commands.add_parser("dataset-status", help="show model-ready dataset coverage and lineage")
     readiness = research_commands.add_parser("readiness", help="evaluate the data gate without fitting a model")
@@ -135,6 +143,9 @@ def build_parser() -> argparse.ArgumentParser:
     model_commands = model.add_subparsers(dest="model_command", required=True)
     train = model_commands.add_parser("train", help="run the readiness-gated LightGBM baseline")
     train.add_argument("--model", choices=("lightgbm",), default="lightgbm")
+    train.add_argument("--dataset", default=None, help="explicit model-ready Parquet dataset")
+    train.add_argument("--manifest", default=None, help="matching dataset manifest JSON")
+    train.add_argument("--name", default="Baseline Real Market Experiment v1")
     evaluate = model_commands.add_parser("evaluate", help="reload and re-evaluate a saved experiment")
     evaluate.add_argument("--model", choices=("lightgbm",), default="lightgbm")
     evaluate.add_argument("--experiment-id", default=None)
@@ -202,12 +213,15 @@ def _run_data(args) -> None:
         print(json.dumps(reconcile_providers(args.ticker, provider_a=args.provider_a,
                          provider_b=args.provider_b, start=args.start, end=args.end,
                          adjustment=args.adjustment), ensure_ascii=False, default=str, indent=2))
+    elif args.data_command == "compare-bases":
+        print(json.dumps(compare_price_bases(args.ticker, provider=args.provider, start=args.start,
+                         end=args.end, jump_threshold=args.jump_threshold), ensure_ascii=False, indent=2, default=str))
 
 
 def _run_research(args) -> None:
     if args.research_command == "build-dataset":
         result = build_research_dataset(start=args.start, end=args.end, adjustment=args.adjustment,
-                                        provider=args.provider, output_path=args.output)
+                                        provider=args.provider, pool_path=args.universe, output_path=args.output)
         print(json.dumps({"dataset_path": str(result.dataset_path), "manifest_path": str(result.manifest_path),
                           "manifest": {key: value for key, value in result.manifest.items() if key != "coverage"},
                           "coverage": result.coverage.to_dict("records")}, ensure_ascii=False, default=str, indent=2))
@@ -223,7 +237,7 @@ def _run_research(args) -> None:
 
 def _run_model(args) -> None:
     if args.model_command == "train":
-        result = train_lightgbm()
+        result = train_lightgbm(dataset_path=args.dataset, manifest_path=args.manifest, experiment_name=args.name)
     elif args.model_command == "evaluate":
         result = evaluate_saved_experiment(args.experiment_id)
     else:

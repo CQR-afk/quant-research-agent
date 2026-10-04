@@ -30,6 +30,8 @@ def evaluate_dataset_readiness(
         raise FileNotFoundError("Research dataset or its manifest is missing; build the dataset first.")
     manifest = json.loads(manifest_file.read_text(encoding="utf-8-sig"))
     config = json.loads((root / "config" / "research.json").read_text(encoding="utf-8-sig"))
+    # Readiness evaluates the explicitly selected dataset basis; config's default remains canonical none.
+    config["adjustment"] = str(manifest.get("adjustment", config["adjustment"]))
     dataset = pd.read_parquet(data_path)
     coverage = pd.DataFrame(manifest.get("coverage", []))
     calendar = AShareTradingCalendar(manifest["research_start"], manifest["research_end"])

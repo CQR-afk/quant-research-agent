@@ -154,3 +154,79 @@ AKShare/BaoStock 对 `000001.SZ`、相同区间和 none 口径的真实对账无
 数据集为 21,257 行、21,202 个实现的五观察期标签、20,598 个完整特征样本，11 只股票有数据。Gate `PASS`：Train 12,491、Validation 2,552、Test 5,280；测试期 480 个日期、横截面覆盖率 100%；时序边界 purge 和 5-session embargo 均通过。最终报告 `artifacts/reports/readiness_20261004T114455Z_c61aea87.json`。这是数据充分性/时序门禁，不证明预测能力；没有拟合 LightGBM。
 
 运行环境仍为 Python 3.14.6；NumPy 2.5.3、Pandas 3.0.6、scikit-learn 1.9.1、LightGBM 4.7.0、DuckDB 1.5.6、PyArrow 25.0.1、AKShare 1.19.1、BaoStock 0.9.4、Tushare 1.4.29、exchange-calendars 4.13.2。`uv pip check` 检查 107 个安装包并全部兼容；`compileall` 通过。qfq/hfq 仍是可变供应商快照，未实现 point-in-time 公司行动还原；当前股票池有幸存者偏差。Step 4.1 到此停止。
+## Step 4.2 价格口径校验与首个真实 LightGBM 基线（2026-10-04）
+
+### 先决检查与本地检查点
+
+执行修改前核对 Git 工作区，全部既有变更均为 Step 4.1 文件；`.env` 未被跟踪，`git ls-files -- data artifacts` 无结果，`.gitignore` 排除 `.env`、`.venv`、数据、数据库、artifacts、日志和模型。源码凭据模式扫描为 0 命中且未输出值。原有 61 项自动化测试全部通过，`uv pip check` 检查 107 包均兼容。按 Step 4.2 要求建立本地提交 `1b0796c chore: checkpoint step 4.1 multi-provider market data`，无远程、未推送。旧 688981.SH 数据未修复。
+
+### qfq 实际接口与价格口径核对
+
+真实短区间命令：
+
+```powershell
+quantlab data download --provider baostock --market ashare --ticker 000001.SZ 600519.SH 300750.SZ --start 20240101 --end 20240331 --adjustment qfq
+```
+
+每只实际返回 58 行，交易日 2024-01-02 至 2024-03-29；OHLC/成交量/成交额字段通过标准化和校验，接收 58、拒绝 0。相同命令重跑三只均为 skipped、获取/接收/更新均为 0。qfq 与 none 在 source、adjustment 分区隔离。
+
+同源价格比较命令：
+
+```powershell
+quantlab data compare-bases --provider baostock --ticker 000001.SZ 600519.SH 300750.SZ --start 20240101 --end 20240331 --jump-threshold 0.2
+```
+
+三只标的各有 58 个共同日期；qfq/none 的 OHLC 比例逐字段相符，收盘价比例 first/median/last 分别为：000001.SZ `0.821514`、600519.SH `0.908734`、300750.SZ `0.930927`。共同日期中 volume、amount 全部相同（各 58/58）。20% 单日绝对收益阈值没有命中记录。跳变诊断只报告机械阈值，不赋予公司行动原因、不自动修复价格。报告：`artifacts/reports/price_basis_3d0d9c1b2eb5.json`。
+
+### 11 股 qfq 历史回补
+
+配置 `config/ashare_universe_qfq_pilot.json` 明确排除了已有缺失字段问题的 688981.SH。实际执行同一可恢复任务 4 次，每批最多 3 股：
+
+```powershell
+quantlab data backfill --market ashare --universe config/ashare_universe_qfq_pilot.json --start 20180101 --end 20251231 --adjustment qfq --provider baostock --limit 3
+```
+
+任务 ID `a6bbc3e4-cbc1-427c-aede-d3d232e8440c`，最终 `complete`，11/11 股票完成，校验拒绝 0，总计 21,257 行。10 股覆盖 2018-01-02 至 2025-12-31，各 1,942 行；300750.SZ 从 2018-06-11 开始，共 1,837 行。对该证券开始日期前区间不推断停牌或上市来源。现有 none 价格库与 none 研究集未覆盖。
+
+### 独立数据集、manifest 与 readiness
+
+实际命令：
+
+```powershell
+quantlab research build-dataset --universe config/ashare_universe_qfq_pilot.json --start 20180101 --end 20251231 --adjustment qfq --provider baostock --output data/processed/ashare_research_dataset_baostock_qfq_v1.parquet
+quantlab research readiness --dataset data/processed/ashare_research_dataset_baostock_qfq_v1.parquet --manifest data/processed/ashare_research_dataset_baostock_qfq_v1.manifest.json
+```
+
+数据集 21,257 行、20,598 行特征完整、21,202 行标签有效。Manifest 为 BaoStock qfq 供应商快照，包含逐股下载快照时间、数据版本 SHA、feature `ashare_daily_v1`、target `target_5d_h5_v1`、池版本、5 期标签及显式 `NOT_POINT_IN_TIME` 提示。原 `ashare_research_dataset_none_v1.parquet` 不改写。
+
+Readiness Gate 实际 PASS：可用标的 11，日历缺口比率 0、非交易日 0、重复样本 0、调整模式仅 qfq；Train 12,491、Validation 2,552、Test 5,280；测试 480 个独立日期，3+ 截面覆盖 100%；两个边界 label purge 通过。报告 `artifacts/reports/readiness_20261004T120839Z_7c36b3f6.json`。Gate PASS 仅表示预设工程门槛满足，不表示模型有效或盈利。
+
+### 唯一一次真实模型实验
+
+实际命令（本阶段只执行一次拟合）：
+
+```powershell
+quantlab model train --model lightgbm --dataset data/processed/ashare_research_dataset_baostock_qfq_v1.parquet --manifest data/processed/ashare_research_dataset_baostock_qfq_v1.manifest.json --name "Baseline Real Market Experiment v1"
+```
+
+配置参数原样取自 `config/research.json`，无调参。训练期 2018–2022，验证期 2023，测试期 2024–2025；Train only fit；train mean 和 momentum_5d 与 LightGBM 共用同一批测试键。
+
+| 2024–2025 样本外诊断 | LightGBM | Train mean | momentum_5d |
+|---|---:|---:|---:|
+| MAE | 0.0317917 | 0.0298928 | 0.0430996 |
+| RMSE | 0.0480043 | 0.0458668 | 0.0657300 |
+| Pearson IC 均值 / 中位数 / 标准差 | -0.08343 / -0.07903 / 0.37399 | NA（常量预测） | 0.02663 / 0.03819 / 0.43661 |
+| RankIC 均值 / 中位数 / 标准差 | -0.06794 / -0.08182 / 0.32806 | NA（常量预测） | 0.00780 / 0.01818 / 0.39546 |
+| 有效 IC 日 / 测试预测行 | 480 / 5,280 | 0 / 5,280 | 480 / 5,280 |
+
+LightGBM 2024 MAE/RMSE `0.037390/0.056463`，Pearson/RankIC `-0.03977/-0.03569`；2025 MAE/RMSE `0.026099/0.037495`，Pearson/RankIC `-0.12782/-0.10073`。四个测试年度季度区间各有分别报告。逐股票实际与预测均值、样本数、MAE/RMSE；预测分布；gain/split feature importance；每日 IC；验证和测试预测及固定测试输入都写入实验产物。模型文件重载后 5,280 固定输入 `allclose(rtol=0, atol=1e-12)` 通过，随后没有再次拟合。
+
+实验 ID `20261004T120849Z_2cb6448746`；报告和模型、预测与诊断分别位于 `artifacts/reports/20261004T120849Z_2cb6448746.json`、`artifacts/models/lightgbm/20261004T120849Z_2cb6448746.joblib`、`artifacts/experiments/20261004T120849Z_2cb6448746/`。`quantlab model evaluate --model lightgbm --experiment-id 20261004T120849Z_2cb6448746` 重新加载并验证同输入预测一致。
+
+这些值是一个 qfq 供应商快照、11 股非 PIT 幸存者工程池下的预测研究结果。未做组合/交易成本/持仓/换手建模，不是 VectorBT 策略回测或盈利结论。
+
+### 本次代码及测试
+
+新增同源 none/qfq 对比与机械跳变诊断、独立 qfq 样本池配置、数据集版本和逐股 qfq 快照 manifest 字段；readiness 根据显式 manifest adjustment 校验；模型 train CLI 可传 dataset/manifest/name；训练实验记录测试整体、按年/季度、按股诊断，预测分布、ICIR、覆盖、gain/split importance 和输入 lineage。Logistic Regression 与 none 基准保留。
+
+新增离线 price basis Fixture 测试，扩展 manifest 与 LightGBM 报告测试。完整运行 `python -m compileall -q src tests` 和 `python -m unittest discover -s tests -v`：**62 passed / 0 failed**；`uv pip check`：107 packages compatible；CLI `model evaluate` reload check：`model_reload_same_input_consistent=true`。没有运行 VectorBT，没有进入后续阶段。

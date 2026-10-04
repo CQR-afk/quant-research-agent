@@ -39,14 +39,28 @@ def _metric_block(actual: np.ndarray, prediction: np.ndarray, daily: pd.DataFram
     daily_pearson = pd.to_numeric(daily["pearson_ic"], errors="coerce").dropna()
     daily_spearman = pd.to_numeric(daily["spearman_rank_ic"], errors="coerce").dropna()
     date_count = int(daily["prediction_date"].nunique()) if len(daily) else 0
+    def ic_summary(values: pd.Series) -> dict[str, object]:
+        values = pd.to_numeric(values, errors="coerce").dropna()
+        std = float(values.std(ddof=1)) if len(values) > 1 else None
+        mean = float(values.mean()) if len(values) else None
+        return {"mean": mean, "median": float(values.median()) if len(values) else None,
+                "std": std, "icir": float(mean / std) if mean is not None and std and std > 0 else None,
+                "valid_days": int(len(values))}
+    cross_sections = pd.to_numeric(daily.get("sample_count", pd.Series(dtype=float)), errors="coerce")
     return {
         "mae": float(mean_absolute_error(actual, prediction)),
         "rmse": float(np.sqrt(mean_squared_error(actual, prediction))),
+        "pearson_ic_summary": ic_summary(daily["pearson_ic"]),
+        "spearman_rank_ic_summary": ic_summary(daily["spearman_rank_ic"]),
         "pearson_ic": float(daily_pearson.mean()) if len(daily_pearson) else None,
         "spearman_rank_ic": float(daily_spearman.mean()) if len(daily_spearman) else None,
         "pearson_ic_coverage": float(len(daily_pearson) / date_count) if date_count else 0.0,
         "spearman_ic_coverage": float(len(daily_spearman) / date_count) if date_count else 0.0,
         "prediction_dates": date_count,
+        "valid_observations": int(np.isfinite(actual).sum()),
+        "na_observations": int(len(actual) - np.isfinite(actual).sum()),
+        "average_cross_section": float(cross_sections.mean()) if len(cross_sections) else None,
+        "minimum_cross_section": int(cross_sections.min()) if len(cross_sections) else None,
         "dates_with_valid_pearson_ic": int(len(daily_pearson)),
         "dates_with_valid_spearman_ic": int(len(daily_spearman)),
         "pearson_na_reasons": daily.loc[daily["pearson_ic"].isna(), "pearson_reason"].value_counts().to_dict(),
@@ -101,17 +115,57 @@ def _score_predictions(test: pd.DataFrame, prediction_columns: list[str]) -> tup
     return result, daily
 
 
+def _period_metrics(predictions: pd.DataFrame, columns: list[str], period: str) -> dict[str, object]:
+    frame = predictions.copy()
+    dates = pd.to_datetime(frame["prediction_date"])
+    frame["period"] = dates.dt.year.astype(str) if period == "year" else dates.dt.to_period("Q").astype(str)
+    output: dict[str, object] = {}
+    for key, group in frame.groupby("period", sort=True):
+        metrics, _ = _score_predictions(group, columns)
+        output[str(key)] = metrics
+    return output
+
+
+def _symbol_diagnostics(predictions: pd.DataFrame, columns: list[str]) -> dict[str, object]:
+    result: dict[str, object] = {}
+    for symbol, group in predictions.groupby("symbol", sort=True):
+        actual = group["target_5d"].to_numpy(dtype=float)
+        result[str(symbol)] = {
+            "sample_count": int(len(group)), "actual_mean": float(np.mean(actual)),
+            **{f"{name}_mean": float(group[name].mean()) for name in columns},
+            **{f"{name}_mae": float(mean_absolute_error(actual, group[name])) for name in columns},
+            **{f"{name}_rmse": float(np.sqrt(mean_squared_error(actual, group[name]))) for name in columns},
+        }
+    return result
+
+
+def _prediction_distribution(predictions: pd.DataFrame, columns: list[str]) -> dict[str, object]:
+    return {name: {"count": int(predictions[name].count()), "mean": float(predictions[name].mean()),
+                   "std": float(predictions[name].std()), "min": float(predictions[name].min()),
+                   "p01": float(predictions[name].quantile(.01)), "median": float(predictions[name].median()),
+                   "p99": float(predictions[name].quantile(.99)), "max": float(predictions[name].max())}
+            for name in columns}
+
+
 def _latest_experiment_id(root: Path) -> str | None:
     manifests = sorted((root / "artifacts" / "experiments").glob("*/manifest.json"),
                        key=lambda path: path.stat().st_mtime, reverse=True)
     return manifests[0].parent.name if manifests else None
 
 
-def train_lightgbm(*, root: Path | str | None = None) -> dict[str, object]:
+def train_lightgbm(*, root: Path | str | None = None, dataset_path: Path | str | None = None,
+                   manifest_path: Path | str | None = None,
+                   experiment_name: str = "Baseline Real Market Experiment v1") -> dict[str, object]:
     root = Path(root) if root else project_root()
     config = _read_json(root / "config" / "research.json")
-    ds = dataset_status(root / "data" / "processed" / "ashare_research_dataset_v1.manifest.json",
-                        root / "data" / "processed" / "ashare_research_dataset_v1.parquet")
+    default_data_path = root / "data" / "processed" / "ashare_research_dataset_v1.parquet"
+    selected_data_path = Path(dataset_path) if dataset_path else default_data_path
+    if not selected_data_path.is_absolute():
+        selected_data_path = root / selected_data_path
+    selected_manifest_path = Path(manifest_path) if manifest_path else selected_data_path.with_suffix(".manifest.json")
+    if not selected_manifest_path.is_absolute():
+        selected_manifest_path = root / selected_manifest_path
+    ds = dataset_status(selected_manifest_path, selected_data_path)
     gate_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ") + "_" + uuid.uuid4().hex[:8]
     gate_path = root / "artifacts" / "reports" / f"readiness_{gate_id}.json"
     if ds.get("status") != "available":
@@ -127,6 +181,7 @@ def train_lightgbm(*, root: Path | str | None = None) -> dict[str, object]:
     dataset = pd.read_parquet(data_path)
     coverage = pd.DataFrame(ds.get("coverage", []))
     calendar = AShareTradingCalendar(ds["research_start"], ds["research_end"])
+    config["adjustment"] = str(ds.get("adjustment", config["adjustment"]))
     splitter = FixedPeriodSplitter(config, calendar)
     gate = evaluate_readiness(dataset, coverage, config, splitter)
     _write_json(gate_path, gate.report)
@@ -178,6 +233,7 @@ def train_lightgbm(*, root: Path | str | None = None) -> dict[str, object]:
     validation_daily.to_csv(experiment_dir / "validation_daily_ic.csv", index=False)
     experiment = {
         "experiment_id": experiment_id,
+        "experiment_name": experiment_name,
         "status": "complete",
         "created_at_utc": datetime.now(timezone.utc).isoformat(),
         "runtime_seconds": time.perf_counter() - started,
@@ -189,23 +245,39 @@ def train_lightgbm(*, root: Path | str | None = None) -> dict[str, object]:
         "target": ds["target"],
         "horizon_observations": ds["target_horizon_observations"],
         "adjustment": ds["adjustment"],
+        "price_basis": ds.get("price_basis"),
+        "adjustment_snapshot_time_by_symbol": ds.get("adjustment_snapshot_time_by_symbol", {}),
         "source": ds["source"],
+        "provider": ds.get("provider"),
+        "dataset_id": ds.get("dataset_id"),
+        "dataset_version": ds.get("dataset_version", ds.get("data_version")),
+        "dataset_path": str(data_path.resolve()),
+        "dataset_manifest_path": str(selected_manifest_path.resolve()),
         "point_in_time_limit": ds["point_in_time_limit"],
         "data_version": ds["data_version"],
         "pool_id": ds["pool_id"],
         "pool_selection_date": ds["pool_selection_date"],
         "survivorship_bias_note": ds["survivorship_bias_note"],
         "feature_version": ds["feature_version"],
+        "target_version": ds.get("target_version", "target_5d_h5_v1"),
         "features": features,
         "feature_parameters": ds["feature_parameters"],
         "calendar": ds["calendar"],
         "split_plan": gate.splits.metadata,
         "readiness_report": str(gate_path),
-        "metrics": {"validation": validation_metrics, "test": test_metrics},
+        "metrics": {"validation": validation_metrics, "test": test_metrics,
+                    "test_yearly": _period_metrics(test_predictions, model_columns, "year"),
+                    "test_quarterly": _period_metrics(test_predictions, model_columns, "quarter"),
+                    "test_by_symbol": _symbol_diagnostics(test_predictions, model_columns),
+                    "test_prediction_distribution": _prediction_distribution(test_predictions, model_columns)},
         "daily_test_ic_path": str((experiment_dir / "daily_ic.csv").resolve()),
         "model_path": str(model_path.resolve()),
         "test_predictions_path": str((experiment_dir / "test_predictions.parquet").resolve()),
         "test_model_inputs_path": str((experiment_dir / "test_model_inputs.parquet").resolve()),
+        "validation_predictions_path": str((experiment_dir / "validation_predictions.parquet").resolve()),
+        "validation_daily_ic_path": str((experiment_dir / "validation_daily_ic.csv").resolve()),
+        "test_daily_ic_path": str((experiment_dir / "daily_ic.csv").resolve()),
+        "feature_importance_path": str((experiment_dir / "feature_importance.csv").resolve()),
         "model_reload_same_input_consistent": reload_consistent,
         "python_version": platform.python_version(),
         "package_versions": {
@@ -215,6 +287,10 @@ def train_lightgbm(*, root: Path | str | None = None) -> dict[str, object]:
             )
         },
     }
+    importance = pd.DataFrame({"feature": features,
+                               "gain": model.booster_.feature_importance(importance_type="gain"),
+                               "split": model.booster_.feature_importance(importance_type="split")})
+    importance.sort_values("gain", ascending=False).to_csv(experiment_dir / "feature_importance.csv", index=False)
     _write_json(experiment_dir / "manifest.json", experiment)
     _write_json(report_path, experiment)
     return {"status": "complete", "experiment_id": experiment_id, "report_path": str(report_path),

@@ -12,7 +12,7 @@ Quant Research Agent 是一个 A 股优先、港股其次的本地量化研究�
 - `quantlab data backfill` 每次按小批次运行、使用 DuckDB 检查点恢复；默认使用 `config/ashare_universe.json` 的样本池，已完成股票不会重复抓取。每个回填任务固定一个 Provider。
 - `quantlab data reconcile` 对两个 Provider 的有限日期响应作并列对账，输出日期缺口和字段差异报告；它不会自动选源或写入行情库。
 - `quantlab research build-dataset` 从本地 DuckDB 构建逐股特征、未来五个有效观察期收益标签及覆盖报告。数据集只选一个 Provider；若指定复权口径存在多个来源，必须显式指定 `--provider`。
-- `quantlab model train --model lightgbm` 运行前执行数据就绪门禁；门禁失败时不拟合。正式真实行情训练仍取决于充分、可审计的真实历史数据。
+- `quantlab model train --model lightgbm --dataset ... --manifest ...` 运行前执行数据就绪门禁；门禁失败时不拟合。已完成一次固定参数的真实 BaoStock qfq 基线实验，数据为供应商复权快照，明确不是 point-in-time 价格。
 
 ## Provider 单位与价格口径
 
@@ -79,6 +79,14 @@ quantlab data adjusted-view --ticker 000001.SZ --start 20240101 --end 20240331 -
 quantlab research build-dataset --start 20180101 --end 20251231 --adjustment none --provider baostock
 quantlab research dataset-status
 
+# 明确构建独立 BaoStock qfq 快照数据集并评估门禁（不覆盖 none 数据集）
+quantlab research build-dataset --universe config/ashare_universe_qfq_pilot.json --start 20180101 --end 20251231 --adjustment qfq --provider baostock --output data/processed/ashare_research_dataset_baostock_qfq_v1.parquet
+quantlab research readiness --dataset data/processed/ashare_research_dataset_baostock_qfq_v1.parquet --manifest data/processed/ashare_research_dataset_baostock_qfq_v1.manifest.json
+quantlab model train --model lightgbm --dataset data/processed/ashare_research_dataset_baostock_qfq_v1.parquet --manifest data/processed/ashare_research_dataset_baostock_qfq_v1.manifest.json --name "Baseline Real Market Experiment v1"
+
+# 对比同一 Provider 的 none/qfq 价格；跳变只会被标记，不会自动解释或修复
+quantlab data compare-bases --provider baostock --ticker 000001.SZ 600519.SH 300750.SZ --start 20240101 --end 20240331 --jump-threshold 0.2
+
 # 保留的旧入口
 quantlab run --ticker SPY --period 5y
 quantlab news --ticker 000001.SZ
@@ -88,6 +96,8 @@ quantlab news --ticker 000001.SZ
 
 ## 实际数据状态
 
-此前 Step 3/4 的本地库有 AKShare 获取的 `000001.SZ` 和 `600519.SH`，各 58 行、2024 年第一季度 qfq 快照，共 116 行。Step 4 的五日收益研究数据集有 116 行、106 个标签，但 60 日窗口不足以产生完整特征。真实历史扩展曾因上游 `RemoteDisconnected` 失败；Step 4 的 Readiness Gate 因数据不足阻止了真实行情训练。
+Step 4.2 已从 BaoStock 实际下载 2024Q1 qfq：`000001.SZ`、`600519.SH`、`300750.SZ` 各 58 行，58 个共同交易日复权/不复权收盘价比例分别约为 0.821514、0.908734、0.930927，成交量与成交额逐日一致。重复下载均被跳过。2018–2025 qfq 历史回补使用独立的 11 股工程样本池，任务已完成、合计 21,257 行；原 `none` 数据仍独立保留。`688981.SH` 因此前已确认的缺失成交量/成交额异常未纳入本轮池，也未修补。
 
-Step 4.1 新 Provider 的离线测试与真实网络验证分别记在 [`docs/development_log.md`](docs/development_log.md) 和 [`docs/engineering_audit.md`](docs/engineering_audit.md)。只把实际成功响应计入线上验证；不可用凭据、网络拦截或上游限制会明确列出。
+独立数据集为 `data/processed/ashare_research_dataset_baostock_qfq_v1.parquet`，manifest 记录 BaoStock、qfq、逐股调整快照时间、数据版本、特征/目标版本和非 PIT 限制。Readiness Gate PASS：训练 12,491、验证 2,552、测试 5,280 行，测试期 480 个日期、每日截面 11 股。已完成且仅完成一次 `Baseline Real Market Experiment v1`：测试 MAE 0.03179、RMSE 0.04800、Pearson IC 均值 -0.08343、Rank IC 均值 -0.06794。它是预测误差与横截面排序结果，不是策略回测或盈利能力结论。模型与全部诊断产物见 `artifacts/experiments/20261004T120849Z_2cb6448746/`；重新加载后固定输入预测一致。
+
+qfq 是 2026-10-04 获取的 BaoStock 供应商快照；历史公司行动信息并非当时可见的 point-in-time 重建。样本池存在幸存者偏差，结果仅为研究基线，不能据此推断可交易表现。Step 4.2 的实际下载、门禁、模型指标和未完成事项记录在 [`docs/project_status.md`](docs/project_status.md) 与 [`docs/development_log.md`](docs/development_log.md)。

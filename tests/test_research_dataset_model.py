@@ -217,6 +217,12 @@ class ResearchDatasetAndModelTests(unittest.TestCase):
             self.assertTrue(first["reload_consistent"])
             report = json.loads(Path(first["report_path"]).read_text(encoding="utf-8"))
             self.assertEqual(set(report["metrics"]["test"]), {"lightgbm", "train_mean", "momentum_5d"})
+            self.assertEqual(report["experiment_name"], "Baseline Real Market Experiment v1")
+            self.assertIn("test_yearly", report["metrics"])
+            self.assertIn("test_quarterly", report["metrics"])
+            self.assertIn("test_by_symbol", report["metrics"])
+            self.assertIn("test_prediction_distribution", report["metrics"])
+            self.assertTrue(Path(report["feature_importance_path"]).exists())
             self.assertTrue(Path(first["model_path"]).exists())
             evaluated = evaluate_saved_experiment(first["experiment_id"], root=root)
             self.assertTrue(evaluated["model_reload_same_input_consistent"])
@@ -263,6 +269,10 @@ class ResearchDatasetAndModelTests(unittest.TestCase):
                 research_config_path=config_path, output_path=output)
             self.assertEqual(result.manifest["symbols_with_data"], 3)
             self.assertEqual(result.dataset.adjustment.unique().tolist(), ["qfq"])
+            self.assertEqual(result.manifest["target_version"], "target_5d_h5_v1")
+            self.assertEqual(result.manifest["dataset_version"], result.manifest["data_version"])
+            self.assertEqual(result.manifest["point_in_time_status"], "NOT_POINT_IN_TIME")
+            self.assertTrue(result.manifest["adjustment_snapshot_time_by_symbol"])
             labeled = result.dataset["label_end_date"].notna()
             self.assertTrue(result.dataset.loc[labeled, "label_end_date"].gt(
                 result.dataset.loc[labeled, "prediction_date"]

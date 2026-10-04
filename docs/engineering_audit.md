@@ -243,3 +243,19 @@ BaoStock 日线 volume 使用股、amount 使用人民币元；返回 `adjustfla
 ### 已知限制
 
 尚未完成事项：Tushare 凭据/权限验证、有效 Tushare factor snapshot、AKShare 连接恢复和实际双源数值比较、688981.SH 缺失数据问题、BaoStock qfq/hfq 线上验证、港股 Provider、历史股票池/退市样本、point-in-time 公司行动还原、VectorBT、Dashboard、Qwen/Hermes、券商交易。Readiness PASS 是数据可用性门槛，不是策略收益或模型有效性结论。Step 4.1 已按用户要求暂停，不自动进入模型实验。
+
+## Step 4.2 复权价格基准与首个真实模型审计（2026-10-04）
+
+Step 4.2 开始前现有 61 项测试全过，`uv pip check` 检查 107 个包兼容。工作区变化均为 Step 4.1 文件；`.env` 未跟踪、生成数据和 artifacts 未纳入 Git，凭据扫描无命中。按要求建立本地 Step 4.1 检查点 `1b0796c chore: checkpoint step 4.1 multi-provider market data`，没有 remote/push。Step 4.2 修改之后的工作区变化尚未提交。
+
+BaoStock qfq 接口真实测试：`000001.SZ`、`600519.SH`、`300750.SZ` 在 2024Q1 各获取 58 行、58 行接受、0 行拒绝。重复执行同一下载后均返回 `skipped`，未多写数据。使用同一 BaoStock 的 none 数据并列比较，58 个共同日期中三股 close qfq/none 比例分别约 0.821514、0.908734、0.930927；OHLC 四种价格比例相符，volume/amount 各 58 行相同。20% 单日变动标记未命中。比较器只提供机械诊断，报告不将突变归因为公司行动或自动改价。报告：`artifacts/reports/price_basis_3d0d9c1b2eb5.json`。
+
+历史 qfq 回补任务 `a6bbc3e4-cbc1-427c-aede-d3d232e8440c` 固定 provider=baostock、adjustment=qfq、2018-01-01..2025-12-31，每批最多 3 只，最终状态 complete。11/11 只股票成功，21,257 行，拒绝 0；300750.SZ 1,837 行（从 2018-06-11），其他每只 1,942 行。配置使用单独的 `config/ashare_universe_qfq_pilot.json`，688981.SH 的已知缺成交量/额问题保留并排除，没有修补。原 none 分区/数据集仍独立。
+
+新研究集 `data/processed/ashare_research_dataset_baostock_qfq_v1.parquet` 与同名 manifest 记录 provider、qfq、`vendor_snapshot_adjusted`、逐股快照时间、数据版本、feature/target 版本和 `NOT_POINT_IN_TIME`。数据集 21,257 行，其中完整特征 20,598，已实现五观察期标签 21,202。Readiness PASS：Train 12,491 / Validation 2,552 / Test 5,280，测试 480 日期、每日截面 11 股，边界 purging 通过。报告：`artifacts/reports/readiness_20261004T120839Z_7c36b3f6.json`。
+
+执行一次唯一真实模型实验 `Baseline Real Market Experiment v1`（ID `20261004T120849Z_2cb6448746`），参数取现有研究配置、未调参；显式输入上述 dataset 和 manifest。2024–2025 测试 MAE/RMSE 为 `0.031792/0.048004`，日 Pearson IC mean/median/std `-0.08343/-0.07903/0.37399`，RankIC `-0.06794/-0.08182/0.32806`，有效 IC 各 480 天。2024 和 2025 指标、8 个季度指标、每股 MAE/RMSE/均值、预测分布、gain/split importance、验证/测试预测和每日 IC 均写入实验文件。三种模型列位于同一预测表，样本键一致。模型重载后 5,280 个固定测试输入预测一致（`atol=1e-12`）；之后仅执行了 `quantlab model evaluate` 重载检查，没有重新拟合。指标属于非 PIT 幸存者样本预测诊断，不是策略利润或 VectorBT 回测。
+
+Step 4.2 新增 `src/quantlab/research/price_basis.py` 及 CLI `data compare-bases`；扩展研究构建 CLI 的独立 universe 参数和 manifest 的逐股调整快照、dataset/target 版本；readiness 按显式 manifest 口径检查；模型 CLI 支持明确传入 dataset、manifest、experiment name；报告纳入 IC 汇总/ICIR、覆盖、按年/季度/证券误差、预测分布、特征 gain/split 和 lineage。离线回归总计 62 项通过，新增 price basis fixture；原 61 项继续通过。Python `compileall`、完整 unittest、uv 兼容检查以及真实模型 reload parity 均完成。
+
+未完成项仍包括 point-in-time 公司行动重建、样本池幸存者偏差校正、港股数据源、交易策略回测、Dashboard、Qwen/Hermes 及任何券商功能。Step 4.2 已停止在基线实验验收后，没有开始下一阶段。
