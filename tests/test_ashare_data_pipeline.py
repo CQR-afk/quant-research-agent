@@ -3,10 +3,12 @@ from __future__ import annotations
 import tempfile
 import shutil
 import unittest
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
+from email.utils import format_datetime
 from pathlib import Path
 from unittest.mock import patch
 from contextlib import contextmanager
+from types import SimpleNamespace
 
 import pandas as pd
 
@@ -14,7 +16,7 @@ from quantlab.data.service import download_market_data, update_market_data
 from quantlab.data.store import MarketDataStore
 from quantlab.data.symbols import normalize_ashare_symbol
 from quantlab.data.validation import validate_daily_bars
-from quantlab.providers.akshare import AKShareProvider
+from quantlab.providers.akshare import AKShareProvider, _retry_after_seconds
 
 
 def raw_fixture(code="000001"):
@@ -180,6 +182,16 @@ class ASharePipelineTests(unittest.TestCase):
                 provider.fetch_raw_daily_bars("000001.SZ", date(2024, 1, 1), date(2024, 1, 31))
         self.assertEqual(fetch.call_count, 2)
         self.assertEqual(fetch.call_args.kwargs["timeout"], 20.0)
+
+    def test_retry_after_http_date_is_respected(self):
+        retry_at = datetime.now(timezone.utc) + timedelta(seconds=20)
+        exc = SimpleNamespace(response=SimpleNamespace(headers={
+            "Retry-After": format_datetime(retry_at, usegmt=True),
+        }))
+        delay = _retry_after_seconds(exc)
+        self.assertIsNotNone(delay)
+        self.assertGreater(delay, 0)
+        self.assertLessEqual(delay, 20)
 
     def test_raw_data_archived_before_validation_reject(self):
         class BadProvider(AKShareProvider):

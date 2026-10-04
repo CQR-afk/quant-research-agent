@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import time
-from datetime import date, datetime
+from datetime import date, datetime, timezone
+from email.utils import parsedate_to_datetime
 from importlib.metadata import version
 from typing import Callable
 
 import akshare as ak
 import pandas as pd
+import requests
 
 from quantlab.data.schema import normalize_daily_bars
 from quantlab.data.symbols import normalize_ashare_symbol
@@ -26,8 +28,8 @@ class AKShareProvider(MarketDataProvider):
     name = "akshare"
     interface = AKSHARE_INTERFACE
 
-    def __init__(self, timeout: float = 20.0, retries: int = 3, retry_delay: float = 0.5,
-                 sleeper: Callable[[float], None] = time.sleep) -> None:
+    def __init__(self, timeout: float = 20.0, retries: int = 3, retry_delay: float = 1.0,
+                 max_retry_delay: float = 30.0, sleeper: Callable[[float], None] = time.sleep) -> None:
         if timeout <= 0:
             raise ValueError("timeout must be positive.")
         if retries < 1:
@@ -35,6 +37,7 @@ class AKShareProvider(MarketDataProvider):
         self.timeout = timeout
         self.retries = retries
         self.retry_delay = max(0.0, retry_delay)
+        self.max_retry_delay = max(self.retry_delay, max_retry_delay)
         self.sleeper = sleeper
 
     @property
@@ -78,8 +81,13 @@ class AKShareProvider(MarketDataProvider):
                 raise
             except Exception as exc:  # Upstream can raise requests, parsing, and schema errors.
                 last_error = exc
-                if attempt < self.retries:
-                    self.sleeper(self.retry_delay * attempt)
+                if attempt >= self.retries or not _is_retryable_error(exc):
+                    break
+                retry_after = _retry_after_seconds(exc)
+                delay = min(self.retry_delay * (2 ** (attempt - 1)), self.max_retry_delay)
+                if retry_after is not None:
+                    delay = min(max(delay, retry_after), self.max_retry_delay)
+                self.sleeper(delay)
 
         assert last_error is not None
         raise AKShareFetchError(
@@ -137,3 +145,29 @@ def _format_date(value: date | datetime | str) -> str:
         return datetime.strptime(digits, "%Y%m%d").strftime("%Y%m%d")
     except ValueError as exc:
         raise ValueError(f"Invalid date {value!r}; expected a real calendar date.") from exc
+
+
+def _is_retryable_error(exc: Exception) -> bool:
+    if isinstance(exc, (requests.exceptions.Timeout, requests.exceptions.ConnectionError, TimeoutError, ConnectionError)):
+        return True
+    response = getattr(exc, "response", None)
+    status = getattr(response, "status_code", None)
+    return status == 429 or (isinstance(status, int) and 500 <= status < 600)
+
+
+def _retry_after_seconds(exc: Exception) -> float | None:
+    response = getattr(exc, "response", None)
+    headers = getattr(response, "headers", {}) or {}
+    value = headers.get("Retry-After")
+    if value is None:
+        return None
+    try:
+        return max(0.0, float(value))
+    except (TypeError, ValueError):
+        try:
+            retry_at = parsedate_to_datetime(value)
+            if retry_at.tzinfo is None:
+                retry_at = retry_at.replace(tzinfo=timezone.utc)
+            return max(0.0, (retry_at - datetime.now(timezone.utc)).total_seconds())
+        except (TypeError, ValueError, OverflowError):
+            return None

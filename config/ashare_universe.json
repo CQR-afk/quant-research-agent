@@ -1,0 +1,24 @@
+{
+  "schema_version": "1.0",
+  "pool_id": "ashare_engineering_2026_10_04_v1",
+  "selection_date": "2026-10-04",
+  "market": "CN_A",
+  "research_start": "2018-01-01",
+  "research_end": "2025-12-31",
+  "purpose": "Engineering sample for validating the data and model pipeline; not a representative or point-in-time universe.",
+  "survivorship_bias_note": "Selected from currently known liquid A-share names. Historical constituents and delisted securities are not included; results are exposed to survivorship and selection bias.",
+  "members": [
+    {"symbol": "000001.SZ", "name": "平安银行", "exchange": "SZSE", "industry": "银行"},
+    {"symbol": "000002.SZ", "name": "万科A", "exchange": "SZSE", "industry": "房地产"},
+    {"symbol": "000333.SZ", "name": "美的集团", "exchange": "SZSE", "industry": "家用电器"},
+    {"symbol": "000651.SZ", "name": "格力电器", "exchange": "SZSE", "industry": "家用电器"},
+    {"symbol": "000858.SZ", "name": "五粮液", "exchange": "SZSE", "industry": "白酒"},
+    {"symbol": "002594.SZ", "name": "比亚迪", "exchange": "SZSE", "industry": "汽车"},
+    {"symbol": "300750.SZ", "name": "宁德时代", "exchange": "SZSE", "industry": "电池"},
+    {"symbol": "600036.SH", "name": "招商银行", "exchange": "SSE", "industry": "银行"},
+    {"symbol": "600519.SH", "name": "贵州茅台", "exchange": "SSE", "industry": "白酒"},
+    {"symbol": "601318.SH", "name": "中国平安", "exchange": "SSE", "industry": "保险"},
+    {"symbol": "601888.SH", "name": "中国中免", "exchange": "SSE", "industry": "旅游零售"},
+    {"symbol": "688981.SH", "name": "中芯国际", "exchange": "SSE", "industry": "半导体"}
+  ]
+}

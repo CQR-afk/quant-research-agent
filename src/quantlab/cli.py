@@ -11,7 +11,9 @@ from quantlab.config import settings
 from quantlab.market_data import download_daily_prices
 from quantlab.modeling import train_and_evaluate
 from quantlab.news import format_news_note, research_news
-from quantlab.data.service import download_market_data, get_data_status, query_market_data, update_market_data, validate_market_data
+from quantlab.data.service import download_market_data_batch, get_data_status, query_market_data, validate_market_data
+from quantlab.experiments import evaluate_saved_experiment, list_experiments, train_lightgbm
+from quantlab.research.dataset import build_research_dataset, dataset_status
 
 
 def _safe_ticker(ticker: str) -> str:
@@ -78,6 +80,23 @@ def build_parser() -> argparse.ArgumentParser:
         if command == "query":
             item.set_defaults(ticker=None)
     data_commands.add_parser("status", help="show locally stored market-data status")
+
+    research = subparsers.add_parser("research", help="build and inspect model-ready datasets")
+    research_commands = research.add_subparsers(dest="research_command", required=True)
+    build_dataset = research_commands.add_parser("build-dataset", help="build features and five-observation labels from DuckDB")
+    build_dataset.add_argument("--start", type=_parse_date, default=None)
+    build_dataset.add_argument("--end", type=_parse_date, default=None)
+    build_dataset.add_argument("--adjustment", choices=("none", "qfq", "hfq"), default=None)
+    research_commands.add_parser("dataset-status", help="show model-ready dataset coverage and lineage")
+
+    model = subparsers.add_parser("model", help="train and inspect research models")
+    model_commands = model.add_subparsers(dest="model_command", required=True)
+    train = model_commands.add_parser("train", help="run the readiness-gated LightGBM baseline")
+    train.add_argument("--model", choices=("lightgbm",), default="lightgbm")
+    evaluate = model_commands.add_parser("evaluate", help="reload and re-evaluate a saved experiment")
+    evaluate.add_argument("--model", choices=("lightgbm",), default="lightgbm")
+    evaluate.add_argument("--experiment-id", default=None)
+    model_commands.add_parser("experiments", help="list immutable local experiments")
     return parser
 
 
@@ -94,16 +113,16 @@ def _run_data(args) -> None:
     if args.data_command == "status":
         print(get_data_status().to_string(index=False))
     elif args.data_command in {"download", "update"}:
-        for ticker in args.ticker:
-            if args.data_command == "download":
-                result = download_market_data(ticker, market=args.market, start=args.start, end=args.end, adjustment=args.adjustment)
-            else:
-                result = update_market_data(ticker, market=args.market, start=args.start, end=args.end,
-                                            adjustment=args.adjustment, full_refresh=args.full_refresh)
+        outcomes = download_market_data_batch(
+            args.ticker, market=args.market, start=args.start, end=args.end, adjustment=args.adjustment,
+            update=args.data_command == "update", full_refresh=getattr(args, "full_refresh", False),
+        )
+        for result in outcomes:
             printable = {key: value for key, value in result.items() if key != "issues"}
             print(json.dumps(printable, default=str, indent=2))
-            if result["status"] != "success":
-                raise ValueError(f"Data validation rejected {ticker}; raw data and validation issues were retained.")
+        failed = [result for result in outcomes if result["status"] in {"failed", "rejected"}]
+        if failed:
+            raise RuntimeError(f"{len(failed)} ticker task(s) failed or were rejected; other symbols were processed and outcomes recorded.")
     elif args.data_command == "validate":
         for ticker in [args.ticker] if isinstance(args.ticker, str) else args.ticker:
             result = validate_market_data(ticker, adjustment=args.adjustment)
@@ -113,6 +132,29 @@ def _run_data(args) -> None:
     elif args.data_command == "query":
         print(query_market_data(ticker=args.ticker, market=args.market, start=args.start, end=args.end,
                                 adjustment=args.adjustment).to_string(index=False))
+
+
+def _run_research(args) -> None:
+    if args.research_command == "build-dataset":
+        result = build_research_dataset(start=args.start, end=args.end, adjustment=args.adjustment)
+        print(json.dumps({"dataset_path": str(result.dataset_path), "manifest_path": str(result.manifest_path),
+                          "manifest": {key: value for key, value in result.manifest.items() if key != "coverage"},
+                          "coverage": result.coverage.to_dict("records")}, ensure_ascii=False, default=str, indent=2))
+    elif args.research_command == "dataset-status":
+        result = dataset_status()
+        if result.get("status") == "available":
+            result = {key: value for key, value in result.items() if key != "coverage"}
+        print(json.dumps(result, ensure_ascii=False, default=str, indent=2))
+
+
+def _run_model(args) -> None:
+    if args.model_command == "train":
+        result = train_lightgbm()
+    elif args.model_command == "evaluate":
+        result = evaluate_saved_experiment(args.experiment_id)
+    else:
+        result = list_experiments()
+    print(json.dumps(result, ensure_ascii=False, default=str, indent=2))
 
 
 def main() -> None:
@@ -125,6 +167,10 @@ def main() -> None:
             run_news(args.ticker)
         elif args.command == "data":
             _run_data(args)
+        elif args.command == "research":
+            _run_research(args)
+        elif args.command == "model":
+            _run_model(args)
     except (RuntimeError, ValueError) as exc:
         parser.error(str(exc))
 

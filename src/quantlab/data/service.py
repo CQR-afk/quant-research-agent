@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import date, timedelta
-from pathlib import Path
+import time
 
 import pandas as pd
 
@@ -12,6 +12,7 @@ from quantlab.data.store import MarketDataStore
 from quantlab.data.symbols import normalize_ashare_symbol
 from quantlab.data.validation import ValidationResult, validate_daily_bars
 from quantlab.providers.akshare import AKShareProvider
+from quantlab.research.calendar import AShareTradingCalendar
 
 
 def download_market_data(
@@ -33,6 +34,12 @@ def download_market_data(
     now = pd.Timestamp.now(tz="UTC")
     store.start_ingest(ingest_id, provider.name, "CN_A", identity.symbol, adjustment, start, end)
     try:
+        if start is not None and end is not None and _range_is_complete(store, identity.symbol, start, end, adjustment, provider.name):
+            reason = "skipped: the requested calendar-session range is already present in the local store"
+            store.finish_ingest(ingest_id, status="skipped", error=reason)
+            return {"ingest_id": ingest_id, "symbol": identity.symbol, "status": "skipped",
+                    "reason": reason, "fetched_rows": 0, "accepted_rows": 0,
+                    "rejected_rows": 0, "updated_rows": 0}
         raw = provider.fetch_raw_daily_bars(identity.symbol, start, end, adjustment=adjustment)
         store.save_raw(raw, market="CN_A", symbol=identity.symbol, adjustment=adjustment,
                        ingest_id=ingest_id, source=provider.name, provider_version=provider.version,
@@ -57,6 +64,9 @@ def download_market_data(
         return {"ingest_id": ingest_id, "symbol": identity.symbol, "status": "success",
                 "fetched_rows": len(raw), "accepted_rows": len(validation.accepted),
                 "rejected_rows": 0, "updated_rows": updated, "issues": validation.issues}
+    except KeyboardInterrupt:
+        store.finish_ingest(ingest_id, status="interrupted", error="interrupted by user; rerun this ticker to resume safely")
+        raise
     except Exception as exc:
         store.finish_ingest(ingest_id, status="failed", error=f"{type(exc).__name__}: {exc}")
         raise
@@ -112,4 +122,78 @@ def query_market_data(
 
 def get_data_status(*, store: MarketDataStore | None = None) -> pd.DataFrame:
     return (store or MarketDataStore()).status()
+
+
+def _range_is_complete(
+    store: MarketDataStore, symbol: str, start: date, end: date, adjustment: str, source: str
+) -> bool:
+    try:
+        calendar = AShareTradingCalendar(start, end)
+        expected = calendar.sessions_between(start, end)
+    except ValueError:
+        return False
+    if expected.empty:
+        return False
+    existing = store.query(symbol=symbol, market="CN_A", start=start, end=end,
+                           adjustment=adjustment, source=source)
+    if existing.empty:
+        return False
+    present = set(pd.to_datetime(existing["trade_date"]).dt.normalize())
+    return set(expected).issubset(present)
+
+
+def _record_skipped(
+    store: MarketDataStore, ticker: str, *, adjustment: str, start: date | None,
+    end: date | None, reason: str,
+) -> dict[str, object]:
+    ingest_id = str(uuid.uuid4())
+    store.start_ingest(ingest_id, "akshare", "CN_A", ticker, adjustment, start, end)
+    store.finish_ingest(ingest_id, status="skipped", error=reason)
+    return {"ingest_id": ingest_id, "symbol": ticker, "status": "skipped", "reason": reason,
+            "fetched_rows": 0, "accepted_rows": 0, "rejected_rows": 0, "updated_rows": 0}
+
+
+def download_market_data_batch(
+    tickers: list[str],
+    *,
+    market: str = "ashare",
+    start: date | None = None,
+    end: date | None = None,
+    adjustment: str = "qfq",
+    update: bool = False,
+    full_refresh: bool = False,
+    throttle_seconds: float = 1.5,
+    provider=None,
+    store: MarketDataStore | None = None,
+) -> list[dict[str, object]]:
+    """Process symbols serially, recording per-symbol outcomes and preserving resume points."""
+    if throttle_seconds < 0:
+        raise ValueError("throttle_seconds cannot be negative.")
+    store = store or MarketDataStore()
+    outcomes: list[dict[str, object]] = []
+    for index, ticker in enumerate(tickers):
+        try:
+            if update:
+                outcome = update_market_data(ticker, market=market, start=start, end=end,
+                                             adjustment=adjustment, full_refresh=full_refresh,
+                                             provider=provider, store=store)
+            else:
+                outcome = download_market_data(ticker, market=market, start=start, end=end,
+                                               adjustment=adjustment, provider=provider, store=store)
+            outcomes.append(outcome)
+        except KeyboardInterrupt:
+            raise
+        except ValueError as exc:
+            try:
+                normalize_ashare_symbol(ticker)
+            except ValueError:
+                outcomes.append(_record_skipped(store, ticker, adjustment=adjustment, start=start, end=end,
+                                                reason=f"skipped: invalid/unsupported pool symbol: {exc}"))
+                continue
+            outcomes.append({"symbol": ticker, "status": "failed", "reason": f"{type(exc).__name__}: {exc}"})
+        except Exception as exc:
+            outcomes.append({"symbol": ticker, "status": "failed", "reason": f"{type(exc).__name__}: {exc}"})
+        if index < len(tickers) - 1 and throttle_seconds:
+            time.sleep(throttle_seconds)
+    return outcomes
 
