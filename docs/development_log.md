@@ -8,6 +8,10 @@
 
 Python 环境的 HTTP/HTTPS/ALL 代理指向回环端口 9，但该端口无服务响应；DNS 解析正常，WinINET 未启用代理且 WinHTTP 为直连。通过已配置代理运行的 AKShare 1.19.1 SSE/SZSE 列表函数均在约 2 秒返回 `ProxyError`。BaoStock SDK 0.9.4 正常登录；单股基础资料字段为 `code, code_name, ipoDate, outDate, type, status`，单股日期行业字段为 `updateDate, code, code_name, industry, industryClassification`，各返回 1 条。全量 basic 请求经 60 秒看门狗及全量 industry 经 15 秒看门狗终止，均未获得完整 schema/数据。离线项目中没有有来源的证券列表表格文件。测试仍为 92/92 通过，环境 107 packages compatible。未修改代码、基线或实验产物；没有获取任何股票行情或建立候选池。由于没有获准的直接源访问，结果为 `metadata_access_still_blocked`，后续需修复进程代理或获批 direct route。
 
+## 2026-10-05 — Step 4.5R.1 网络复核
+
+起始 HEAD `0c63cef`，工作区干净，指定检查点均存在。当前代理仍为 loopback:9 且探测超时；没有明确项目级直连授权，因此本轮没有调用交易所在线列表。保留前次 BaoStock 单股成功结果。SDK 源码显示每页上限为 2,000 条，`ResultData.next()` 在满页后会请求下一页；初次响应和分页都经过无超时的阻塞 socket receive 循环。现有看门狗没有逐页日志，因此不能定位卡在初始响应、后续分页、传输体积/速度或终止符。92 项测试通过，107 个包兼容。未创建候选池或改动数据/模型。状态仍为 `metadata_access_still_blocked`。
+
 ## 2026-10-04 — Step 3：A 股数据管线与本地研究数据库
 
 ### 实施内容

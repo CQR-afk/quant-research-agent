@@ -153,3 +153,7 @@ Step 4.4 检查点 `c4ca573 chore: checkpoint step 4.4 cross-sectional target st
 ### Step 4.5R 更新（2026-10-05）
 
 已确认 Python 大小写代理变量指向无响应的 loopback:9；WinINET 未启用代理、WinHTTP 为直连；DNS 正常。BaoStock 0.9.4 登录、单股基础资料与 2018-01-01 日期参数的单股行业查询成功，并取得真实字段名；`query_stock_basic()` 全量查询 60 秒外部看门狗超时，全行业查询 15 秒超时。AKShare SSE/SZSE 列表函数均经配置代理失败于 `ProxyError`。SSE 页面仅在诊断性直连请求中返回 200，SZSE 页面直连 ReadTimeout；没有使用直连下载数据或修改全局网络设置。项目内没有官方证券列表 CSV/Excel 文件。故状态仍是 `metadata_access_still_blocked`，没有 Security Master 或候选清单。全套 92 项测试通过，Python 3.14.6，107 个包兼容。详见 [`step_4_5_universe_expansion.md`](step_4_5_universe_expansion.md)。
+
+### Step 4.5R.1 更新
+
+起始 HEAD `0c63cef` 且工作区干净；`c4ca573` 与 `046e682` 检查点存在。代理环境仍指向无响应的 loopback:9。本次没有明确直连授权，因此未发起 SSE 主板、SSE 科创板或 SZSE 的在线列表请求。静态检查发现 BaoStock 每页最多 2,000 条，`ResultData.next()` 在满页后会请求下一页；它与初始响应都使用无超时的阻塞 socket 接收循环。现有看门狗没有逐页进度日志，无法判断卡在首个响应还是后续分页。92 项测试通过，107 个依赖兼容。结果保持 `metadata_access_still_blocked`；详见执行报告 Step 4.5R.1。
