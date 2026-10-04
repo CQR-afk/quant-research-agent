@@ -7,7 +7,7 @@ from dataclasses import dataclass
 import numpy as np
 import pandas as pd
 
-from quantlab.research.features import FEATURE_COLUMNS
+from quantlab.research.features import FEATURE_VERSION, feature_spec
 from quantlab.research.splits import FixedPeriodSplitter, SplitBundle
 
 
@@ -24,6 +24,10 @@ def evaluate_readiness(
     config: dict[str, object],
     splitter: FixedPeriodSplitter,
 ) -> ReadinessResult:
+    feature_version = str(dataset["feature_version"].dropna().iloc[0]) if (
+        "feature_version" in dataset and dataset["feature_version"].notna().any()
+    ) else FEATURE_VERSION
+    feature_columns, _, _ = feature_spec(feature_version)
     splits = splitter.split(dataset)
     checks: list[dict[str, object]] = []
 
@@ -58,7 +62,7 @@ def evaluate_readiness(
     expected_adjustment = str(config["adjustment"])
     check("single_adjustment_mode", adjustment_values == [expected_adjustment], adjustment_values, [expected_adjustment])
 
-    feature_complete = dataset[FEATURE_COLUMNS].notna().all(axis=1) if len(dataset) else pd.Series(dtype=bool)
+    feature_complete = dataset[feature_columns].notna().all(axis=1) if len(dataset) else pd.Series(dtype=bool)
     feature_complete_count = int(feature_complete.sum())
     check("feature_samples", feature_complete_count > 0, feature_complete_count, "at least one complete feature row")
     splits = splitter.split(dataset.loc[feature_complete].copy()) if len(dataset) else splits
@@ -68,7 +72,7 @@ def evaluate_readiness(
         ("validation", splits.validation, "validation"),
         ("test", splits.test, "test"),
     ):
-        usable = frame.loc[frame[FEATURE_COLUMNS].notna().all(axis=1) & frame[target_cols].notna().all(axis=1)] if len(frame) else frame
+        usable = frame.loc[frame[feature_columns].notna().all(axis=1) & frame[target_cols].notna().all(axis=1)] if len(frame) else frame
         required_rows = int(config["minimum_rows_per_split"])
         check(f"{name}_rows", len(usable) >= required_rows, len(usable), f"at least {required_rows} rows")
         finite = bool(np.isfinite(usable["target_5d"].to_numpy(dtype=float)).all()) if len(usable) else False

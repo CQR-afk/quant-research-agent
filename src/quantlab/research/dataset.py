@@ -17,7 +17,7 @@ from quantlab.data.store import MarketDataStore
 from quantlab.data.symbols import normalize_ashare_symbol
 from quantlab.features import make_forward_target
 from quantlab.research.calendar import AShareTradingCalendar
-from quantlab.research.features import FEATURE_COLUMNS, FEATURE_PARAMETERS, FEATURE_VERSION, FeatureBuilder
+from quantlab.research.features import FEATURE_VERSION, feature_spec
 
 
 def project_root() -> Path:
@@ -73,6 +73,7 @@ def build_research_dataset(
     adjustment: str | None = None,
     provider: str | None = None,
     output_path: Path | str | None = None,
+    feature_version: str = FEATURE_VERSION,
 ) -> DatasetBuildResult:
     """Create per-security causal features and five-observation labels from DuckDB."""
     root = project_root()
@@ -87,6 +88,9 @@ def build_research_dataset(
     research_end = pd.Timestamp(end or configured_range.get("end") or pool["research_end"]).normalize()
     if research_start > research_end:
         raise ValueError("Research start must be on or before end.")
+    feature_columns, feature_parameters, builder_type = feature_spec(feature_version)
+    if feature_version != FEATURE_VERSION and research_end >= pd.Timestamp("2024-01-01"):
+        raise ValueError("The development feature build is sealed at 2023-12-31; later dates are unavailable to this workflow.")
     adjustment = adjustment or str(config["adjustment"])
     market = str(config.get("market", "CN_A"))
     if market != "CN_A":
@@ -170,7 +174,7 @@ def build_research_dataset(
         bars = pd.concat(bars_by_symbol, ignore_index=True)
         if bars.duplicated(["symbol", "trade_date"]).any():
             raise ValueError("Research bars contain duplicate symbol/prediction dates.")
-        features = FeatureBuilder().build(bars)
+        features = builder_type().build(bars)
         targets: list[pd.DataFrame] = []
         for symbol, group in bars.groupby("symbol", sort=False):
             chronological = group.sort_values("trade_date").set_index("trade_date")
@@ -191,7 +195,7 @@ def build_research_dataset(
         dataset = dataset.sort_values(["prediction_date", "symbol"], kind="stable").reset_index(drop=True)
     else:
         dataset = pd.DataFrame(columns=[
-            "symbol", "prediction_date", *FEATURE_COLUMNS, "target_5d", "label_end_date",
+            "symbol", "prediction_date", *feature_columns, "target_5d", "label_end_date",
             "market", "exchange", "source", "adjustment", "ingest_id", "bar_record_version",
         ])
         bars = pd.DataFrame(columns=["symbol", "trade_date", "source", "adjustment", "row_hash", "record_version", "ingest_id"])
@@ -213,9 +217,9 @@ def build_research_dataset(
         "source": source,
         "date_range": {"start": research_start.date().isoformat(), "end": research_end.date().isoformat()},
         "calendar": calendar.metadata,
-        "feature_version": FEATURE_VERSION,
-        "feature_columns": FEATURE_COLUMNS,
-        "feature_parameters": FEATURE_PARAMETERS,
+        "feature_version": feature_version,
+        "feature_columns": feature_columns,
+        "feature_parameters": feature_parameters,
         "target": "target_5d = close.shift(-5) / close - 1",
         "target_horizon_observations": 5,
         "target_version": "target_5d_h5_v1",
@@ -228,7 +232,7 @@ def build_research_dataset(
         "point_in_time_limit": "No point-in-time corporate-action reconstruction; provider adjusted history is a vendor snapshot and may be revised. Unadjusted price returns exclude distributions.",
         "survivorship_bias_note": pool["survivorship_bias_note"],
         "dataset_rows": len(dataset),
-        "feature_complete_rows": int(dataset[FEATURE_COLUMNS].notna().all(axis=1).sum()) if len(dataset) else 0,
+        "feature_complete_rows": int(dataset[feature_columns].notna().all(axis=1).sum()) if len(dataset) else 0,
         "labeled_rows": int(dataset["target_5d"].notna().sum()) if len(dataset) else 0,
         "data_version": _data_version(bars) if len(bars) else hashlib.sha256(b"").hexdigest(),
         "dataset_path": str(output_path.resolve()),

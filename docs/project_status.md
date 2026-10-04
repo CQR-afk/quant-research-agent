@@ -4,7 +4,29 @@
 **项目目录：`D:\Quantification`**
 **定位：A 股优先、港股其次的本地研究与预测平台；不连接券商账户、不自动下单。**
 
-## 当前结论
+## Step 4.3 当前状态
+
+Step 4.3 已完成并停止于预定范围：新增 scale-invariant v2 特征、development-only walk-forward 服务、样本/诊断报告和治理元数据。没有重新评估 2024–2025，没有创建新 holdout 行情，没有运行回测、调参或扩大股票池。Step 4.2 固定检查点为 `661596e chore: checkpoint step 4.2 real lightgbm baseline`；Step 4.3 修改仍在工作区，尚未提交。
+
+Baseline Real Market Experiment v1 (`20261004T120849Z_2cb6448746`) 保持 immutable。原始 2024–2025 测试 Pearson IC `-0.08343`、Rank IC `-0.06794` 保留，登记为 `LEGACY_OBSERVED_TEST`。治理登记在 `config/research_governance.json`，future sealed holdout 从 `2026-01-01` 起定义为协议元数据且 `used=false`。Walk-forward 报告声明未访问 baseline 测试数据、未生成 2024 年及以后预测/指标。基线原始 manifest 未修改。
+
+开发集仍为 11 股 BaoStock qfq vendor-adjusted 快照，feature v1 与新增的 `ashare_daily_v2_scale_invariant` 使用相同 target `target_5d_h5_v1`、固定模型参数和相同 2018–2023 expanding-window 验证折。v1/v2 的所有验证 sample keys、target 和 `label_end_date` 对齐；v2 因 warm-up 训练行每折少 36 行。验证日期、行数及指标如下（指标顺序：MAE、RMSE、Pearson IC 均值、Rank IC 均值、ICIR、Rank ICIR、正 Pearson/Rank IC 日比例）：
+
+| Fold | Train 实际日期 / 行数 | Validation 实际日期 / 行数 | purge Train/Val；embargo | v1 指标 | v2 指标 |
+|---|---|---|---|---|
+| 1 | 2018-04-02–2020-12-17 / 7,156（v2 7,120） | 2021-01-04–2021-12-17 / 2,563 | 110 / 110；5 sessions | .044050, .057398, .081075, .050449, .204665, .141584, 60.09% / 56.22% | .045209, .058473, .025537, -.007608, .065182, -.021234, 49.36% / 47.64% |
+| 2 | 2018-04-02–2021-12-17 / 9,829（v2 9,793） | 2022-01-04–2022-12-16 / 2,552 | 110 / 110；5 sessions | .042528, .054860, .073181, .046199, .196242, .122961, 54.31% / 53.88% | .041274, .053504, -.000698, -.028840, -.001754, -.083275, 46.55% / 46.12% |
+| 3 | 2018-04-02–2022-12-16 / 12,491（v2 12,455） | 2023-01-03–2023-12-15 / 2,552 | 110 / 55；5 sessions | .031445, .039879, .048397, .025000, .159386, .075232, 56.47% / 49.14% | .030184, .039170, -.013691, -.015165, -.035066, -.043240, 49.14% / 46.98% |
+
+跨折等权平均（mean of fold metrics）v1 为 MAE `.039341`、RMSE `.050712`、Pearson IC `.067551`、Rank IC `.040549`、ICIR `.186764`、Rank ICIR `.113259`、正 Pearson/Rank IC 日比例 `56.95% / 53.08%`；v2 对应 `.038889`、`.050382`、`.003716`、`-.017204`、`.009454`、`-.049250`、`48.35% / 46.91%`。每折 common validation alignment 分别为 2,563、2,552、2,552 个完全一致 keys，以上亦是 common-sample comparison。v2 的误差略低，但其 Rank IC 三折均为负，未达到正 Rank IC 至少两折的内部筛选条件，故状态为 `development_only`。
+
+v1 scale-dependent 特征为 MA_5/10/20/60、MACD、MACD_Signal、Volume_MA5/20；scale-invariant 特征为四个收益率、Price_to_MA20、RSI_14、两项波动率和 Volume_Ratio。按 11 股每股特征中位数与每股中位 close/volume 的 Pearson 相关，MA_5–MA_60 为 `.999851–.9999998`，MACD/MACD_Signal 为 `.985718–.991883`，Volume_MA5/20 为 `.999890–.999911`。这是描述性尺度关系，不是因果判断。v1 fold top feature 为 Volatility_20d 两次、Volume_MA20 一次；v2 三折均为 Volatility_20d。平均 top-5 gain 占比为 `48.16% / 50.18%`，v2 略集中。
+
+两版模型均未出现 near-constant 预测；预测标准差/目标标准差的跨折中位比例 v1 为 `.305`、v2 为 `.255`。预测标准差最大/最小折间比 v1 为 `1.79`、v2 为 `2.18`。12 个季度的 IC 方向仍波动：v1 有 9/12 季度 Pearson、7/12 季度 Rank IC 为正；v2 为 8/12、6/12。NW lag=5 的逐折 t diagnostic 已写入报告；它只用于考虑重叠标签下的序列相关，不是正式显著性或投资有效性证明。
+
+完整机器可读结果：`artifacts/reports/walkforward_comparison_2ee1453e2be5.json`；实验目录：`artifacts/experiments/walkforward_ashare_daily_v1_e52bb0812502/` 与 `artifacts/experiments/walkforward_ashare_daily_v2_scale_invariant_c0656b5d5257/`。v2 development dataset 上限为 2023-12-31，15,922 行，15,227 行完整特征、15,867 行标签有效。更多实现历史见 `docs/development_log.md`。
+
+## Step 4.2 基线结论（历史记录）
 
 Step 4.2 已在 Step 4.1 多源数据基础上完成：BaoStock qfq 真实行情校验、2018–2025 的 11 股独立回补、独立 qfq model-ready 数据集、readiness PASS，以及一次固定参数的真实 LightGBM 回归基线实验。原 canonical `none` 数据集和行情未被覆盖。LightGBM 模型固定输入重载校验通过。
 
@@ -12,7 +34,7 @@ Step 4.2 已在 Step 4.1 多源数据基础上完成：BaoStock qfq 真实行情
 
 ## 工程与环境
 
-- 本地检查点：`1b0796c chore: checkpoint step 4.1 multi-provider market data`。无远程仓库，没有推送。本阶段 Step 4.2 源码及文档变更仍在工作区。
+- Step 4.2 开始前的本地检查点：`661596e chore: checkpoint step 4.2 real lightgbm baseline`。无远程仓库，没有推送；Step 4.3 实施后工作区有未提交改动。
 - Python：`.venv` 中 Python 3.14.6。未迁移或卸载系统 Python。
 - 关键包：NumPy 2.5.3、Pandas 3.0.6、scikit-learn 1.9.1、LightGBM 4.7.0、DuckDB 1.5.6、PyArrow 25.0.1、AKShare 1.19.1、BaoStock 0.9.4、Tushare 1.4.29、exchange-calendars 4.13.2、VectorBT 1.1.1、Numba 0.68.0、OpenAI SDK 3.24.0、yfinance 1.7.0。
 - `uv pip check --python .venv\Scripts\python.exe` 检查 107 个已安装包，全部兼容。`compileall` 通过；全套 unittest 为 **62 passed**。

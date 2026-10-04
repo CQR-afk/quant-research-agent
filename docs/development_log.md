@@ -230,3 +230,46 @@ LightGBM 2024 MAE/RMSE `0.037390/0.056463`，Pearson/RankIC `-0.03977/-0.03569`�
 新增同源 none/qfq 对比与机械跳变诊断、独立 qfq 样本池配置、数据集版本和逐股 qfq 快照 manifest 字段；readiness 根据显式 manifest adjustment 校验；模型 train CLI 可传 dataset/manifest/name；训练实验记录测试整体、按年/季度、按股诊断，预测分布、ICIR、覆盖、gain/split importance 和输入 lineage。Logistic Regression 与 none 基准保留。
 
 新增离线 price basis Fixture 测试，扩展 manifest 与 LightGBM 报告测试。完整运行 `python -m compileall -q src tests` 和 `python -m unittest discover -s tests -v`：**62 passed / 0 failed**；`uv pip check`：107 packages compatible；CLI `model evaluate` reload check：`model_reload_same_input_consistent=true`。没有运行 VectorBT，没有进入后续阶段。
+
+## 2026-10-04 — Step 4.3：Walk-forward、特征尺度审计与治理
+
+### Git 与冻结基线
+
+- Step 4.2 固定检查点为 `661596e chore: checkpoint step 4.2 real lightgbm baseline`。无远程仓库、未推送。Step 4.3 代码和文档仍在工作区，未提交。
+- Baseline Real Market Experiment v1 (`20261004T120849Z_2cb6448746`) 按 immutable 处理，manifest 未编辑。2024–2025 Test Pearson IC `-0.08343`、Rank IC `-0.06794` 保留并登记为 `LEGACY_OBSERVED_TEST`；开发命令不读取其样本或指标。
+- `config/research_governance.json` 为 2026-01-01 起的 sealed holdout 定义协议元数据，`used=false`。没有下载或评价 2026 年数据。
+
+### 实现
+
+- v1 的 scale-invariant 特征为 Return_1d/5d/10d/20d、Price_to_MA20、RSI_14、Volatility_5d/20d、Volume_Ratio；scale-dependent 特征为 MA_5/10/20/60、MACD、MACD_Signal、Volume_MA5/20。
+- 新增 `ashare_daily_v2_scale_invariant`：Return_1d/5d/10d/20d、Close_to_MA5/10/20/60、RSI_14、MACD_to_Close、MACD_Signal_to_Close、Volatility_5d/20d、Volume_to_MA5/20、Volume_Change_1d。零分母和未形成窗口保留 NaN，不向前/未来填充；rolling 按 symbol 隔离；模型输入不含绝对尺度原值或 symbol ID。target 仍为 `target_5d_h5_v1`。
+- dataset builder 支持 feature version 选择，并禁止 v2 构建跨入 2024 年。v2 本地开发数据集 15,922 行，其中 15,227 行完整特征、15,867 行有效标签；本阶段未拉取新行情。
+- 新增 `quantlab research walk-forward` 服务和 CLI。三个 expanding folds 为 2018–2020→2021、2018–2021→2022、2018–2022→2023；全局日期边界、label-end purge、5-session embargo、不 shuffle，使用与 baseline 相同的固定 LightGBM 参数。报告包含 common sample 对齐、逐折误差/IC、月/季 IC、ICIR、Newey-West lag=5、gain/split importance 和预测分布。
+- 实际日期/行数：Fold1 Train 2018-04-02–2020-12-17（v1/v2 7,156/7,120），Validation 2021-01-04–2021-12-17（2,563），purge 110/110；Fold2 Train 至 2021-12-17（9,829/9,793），Validation 2022-01-04–2022-12-16（2,552），purge 110/110；Fold3 Train 至 2022-12-16（12,491/12,455），Validation 2023-01-03–2023-12-15（2,552），purge 110/55。各折 11 个股票，v1/v2 验证键、target、label end date 完全一致。
+
+### 实验结果
+
+实际执行：
+
+```powershell
+quantlab research walk-forward --dataset-v1 data/processed/ashare_research_dataset_baostock_qfq_v1.parquet --manifest-v1 data/processed/ashare_research_dataset_baostock_qfq_v1.manifest.json --dataset-v2 data/processed/ashare_research_dataset_baostock_qfq_v2_scale_invariant_dev_2018_2023.parquet --manifest-v2 data/processed/ashare_research_dataset_baostock_qfq_v2_scale_invariant_dev_2018_2023.manifest.json
+```
+
+报告：`artifacts/reports/walkforward_comparison_2ee1453e2be5.json`；v1 实验 `walkforward_ashare_daily_v1_e52bb0812502`，v2 实验 `walkforward_ashare_daily_v2_scale_invariant_c0656b5d5257`。每折指标依次为 MAE / RMSE / Pearson IC 均值 / Rank IC 均值 / ICIR / Rank ICIR / 正 Pearson 日比 / 正 Rank IC 日比：
+
+| Fold | v1 | v2 |
+|---|---|---|
+| 2021 | .044050 / .057398 / .081075 / .050449 / .204665 / .141584 / 60.09% / 56.22% | .045209 / .058473 / .025537 / -.007608 / .065182 / -.021234 / 49.36% / 47.64% |
+| 2022 | .042528 / .054860 / .073181 / .046199 / .196242 / .122961 / 54.31% / 53.88% | .041274 / .053504 / -.000698 / -.028840 / -.001754 / -.083275 / 46.55% / 46.12% |
+| 2023 | .031445 / .039879 / .048397 / .025000 / .159386 / .075232 / 56.47% / 49.14% | .030184 / .039170 / -.013691 / -.015165 / -.035066 / -.043240 / 49.14% / 46.98% |
+
+common-sample 跨折均值 v1→v2：MAE `.039341→.038889`、RMSE `.050712→.050382`、Pearson IC `.067551→.003716`、Rank IC `.040549→-.017204`、ICIR `.186764→.009454`、RankICIR `.113259→-.049250`、正 Pearson/Rank IC 日比例 `56.95%/53.08%→48.35%/46.91%`。v2 误差小幅降低，但三折 Rank IC 均负，因此状态为 `development_only`，不构成方向预测升级。没有依据 legacy test 反转 prediction。
+
+v1 每股特征中位数与每股中位 close/volume 的 Pearson 描述性相关：MA_5–MA_60 `0.999851–0.9999998`，MACD/MACD_Signal `0.985718–0.991883`，Volume_MA5/20 `0.999890–0.999911`（11 股）。v1 top feature 为 Volatility_20d 两折、Volume_MA20 一折；v2 三折均为 Volatility_20d。平均 top-5 gain 占比 `.4816/.5018`，v2 的重要性分布略集中。预测均非 near-constant；预测/目标标准差中位比 `.305/.255`，预测标准差跨折最大/最小比 `1.79/2.18`。12 个季度里 Pearson/Rank IC 正季度数量 v1 为 9/7、v2 为 8/6。NW lag=5 仅诊断重叠标签造成的序列相关，不作为正式显著性或投资有效性证明。
+
+### 测试和范围
+
+- 新增 19 项离线 walk-forward 测试；全套 **81 passed / 0 failed**（原 62 项保留）。覆盖日期边界、purge/embargo、v2 不变性/逐股 rolling、零分母/NaN/Inf/零成交量、common sample 与 target、固定参数、重要性和预测稳定性、NW diagnostic、legacy test guard 及开发期截止。
+- `compileall` 通过；`uv pip check` 检查 107 个包全部兼容。没有生成 2024+ 预测/指标；未运行 VectorBT、参数搜索、universe 扩展或其他模型，也未接入 GPT/news/Qwen/Hermes/交易。
+
+Step 4.3 到此停止，等待后续阶段指令。

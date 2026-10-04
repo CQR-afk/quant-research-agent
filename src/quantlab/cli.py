@@ -23,6 +23,8 @@ from quantlab.experiments import evaluate_saved_experiment, list_experiments, tr
 from quantlab.research.dataset import build_research_dataset, dataset_status
 from quantlab.research.gate import evaluate_dataset_readiness
 from quantlab.research.price_basis import compare_price_bases
+from quantlab.research.walk_forward import run_walk_forward_experiment
+from quantlab.research.features import FEATURE_VERSION, FEATURE_V2_VERSION
 
 
 def _safe_ticker(ticker: str) -> str:
@@ -134,10 +136,18 @@ def build_parser() -> argparse.ArgumentParser:
     build_dataset.add_argument("--provider", default=None)
     build_dataset.add_argument("--universe", default=None)
     build_dataset.add_argument("--output", default=None, help="optional output Parquet path")
+    build_dataset.add_argument("--feature-version", choices=(FEATURE_VERSION, FEATURE_V2_VERSION), default=FEATURE_VERSION)
     research_commands.add_parser("dataset-status", help="show model-ready dataset coverage and lineage")
     readiness = research_commands.add_parser("readiness", help="evaluate the data gate without fitting a model")
     readiness.add_argument("--dataset", default=None)
     readiness.add_argument("--manifest", default=None)
+    walk_forward = research_commands.add_parser(
+        "walk-forward", help="compare v1 and scale-invariant v2 on expanding pre-2024 folds only"
+    )
+    walk_forward.add_argument("--dataset-v1", required=True)
+    walk_forward.add_argument("--manifest-v1", required=True)
+    walk_forward.add_argument("--dataset-v2", required=True)
+    walk_forward.add_argument("--manifest-v2", required=True)
 
     model = subparsers.add_parser("model", help="train and inspect research models")
     model_commands = model.add_subparsers(dest="model_command", required=True)
@@ -221,7 +231,8 @@ def _run_data(args) -> None:
 def _run_research(args) -> None:
     if args.research_command == "build-dataset":
         result = build_research_dataset(start=args.start, end=args.end, adjustment=args.adjustment,
-                                        provider=args.provider, pool_path=args.universe, output_path=args.output)
+                                        provider=args.provider, pool_path=args.universe, output_path=args.output,
+                                        feature_version=args.feature_version)
         print(json.dumps({"dataset_path": str(result.dataset_path), "manifest_path": str(result.manifest_path),
                           "manifest": {key: value for key, value in result.manifest.items() if key != "coverage"},
                           "coverage": result.coverage.to_dict("records")}, ensure_ascii=False, default=str, indent=2))
@@ -233,6 +244,18 @@ def _run_research(args) -> None:
     elif args.research_command == "readiness":
         print(json.dumps(evaluate_dataset_readiness(dataset_path=args.dataset, manifest_path=args.manifest),
                          ensure_ascii=False, default=str, indent=2))
+    elif args.research_command == "walk-forward":
+        result = run_walk_forward_experiment(
+            dataset_v1_path=args.dataset_v1, manifest_v1_path=args.manifest_v1,
+            dataset_v2_path=args.dataset_v2, manifest_v2_path=args.manifest_v2,
+        )
+        report = result["report"]
+        print(json.dumps({
+            "status": result["status"], "report_path": result["report_path"],
+            "feature_v1_experiment_id": report["feature_v1"]["experiment_id"],
+            "feature_v2_experiment_id": report["feature_v2"]["experiment_id"],
+            "candidate_assessment": report["candidate_assessment"],
+        }, ensure_ascii=False, default=str, indent=2))
 
 
 def _run_model(args) -> None:

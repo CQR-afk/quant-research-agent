@@ -12,6 +12,7 @@ Quant Research Agent 是一个 A 股优先、港股其次的本地量化研究�
 - `quantlab data backfill` 每次按小批次运行、使用 DuckDB 检查点恢复；默认使用 `config/ashare_universe.json` 的样本池，已完成股票不会重复抓取。每个回填任务固定一个 Provider。
 - `quantlab data reconcile` 对两个 Provider 的有限日期响应作并列对账，输出日期缺口和字段差异报告；它不会自动选源或写入行情库。
 - `quantlab research build-dataset` 从本地 DuckDB 构建逐股特征、未来五个有效观察期收益标签及覆盖报告。数据集只选一个 Provider；若指定复权口径存在多个来源，必须显式指定 `--provider`。
+- `quantlab research walk-forward` 使用固定 LightGBM 参数，在 2018–2023 三个 expanding-window folds 对比 v1 与 scale-invariant v2 特征；统一样本键，生成逐折预测、IC、重要性、预测分布和重叠标签诊断。该命令不评价 2024 年及以后的表现。
 - `quantlab model train --model lightgbm --dataset ... --manifest ...` 运行前执行数据就绪门禁；门禁失败时不拟合。已完成一次固定参数的真实 BaoStock qfq 基线实验，数据为供应商复权快照，明确不是 point-in-time 价格。
 
 ## Provider 单位与价格口径
@@ -81,8 +82,10 @@ quantlab research dataset-status
 
 # 明确构建独立 BaoStock qfq 快照数据集并评估门禁（不覆盖 none 数据集）
 quantlab research build-dataset --universe config/ashare_universe_qfq_pilot.json --start 20180101 --end 20251231 --adjustment qfq --provider baostock --output data/processed/ashare_research_dataset_baostock_qfq_v1.parquet
+quantlab research build-dataset --universe config/ashare_universe_qfq_pilot.json --start 20180101 --end 20231231 --adjustment qfq --provider baostock --feature-version ashare_daily_v2_scale_invariant --output data/processed/ashare_research_dataset_baostock_qfq_v2_scale_invariant_dev_2018_2023.parquet
 quantlab research readiness --dataset data/processed/ashare_research_dataset_baostock_qfq_v1.parquet --manifest data/processed/ashare_research_dataset_baostock_qfq_v1.manifest.json
 quantlab model train --model lightgbm --dataset data/processed/ashare_research_dataset_baostock_qfq_v1.parquet --manifest data/processed/ashare_research_dataset_baostock_qfq_v1.manifest.json --name "Baseline Real Market Experiment v1"
+quantlab research walk-forward --dataset-v1 data/processed/ashare_research_dataset_baostock_qfq_v1.parquet --manifest-v1 data/processed/ashare_research_dataset_baostock_qfq_v1.manifest.json --dataset-v2 data/processed/ashare_research_dataset_baostock_qfq_v2_scale_invariant_dev_2018_2023.parquet --manifest-v2 data/processed/ashare_research_dataset_baostock_qfq_v2_scale_invariant_dev_2018_2023.manifest.json
 
 # 对比同一 Provider 的 none/qfq 价格；跳变只会被标记，不会自动解释或修复
 quantlab data compare-bases --provider baostock --ticker 000001.SZ 600519.SH 300750.SZ --start 20240101 --end 20240331 --jump-threshold 0.2
@@ -92,7 +95,7 @@ quantlab run --ticker SPY --period 5y
 quantlab news --ticker 000001.SZ
 ```
 
-数据采集、回填和对账不要求 GPT、Ollama 或本地 Agent。当前仍未实现 VectorBT 完整策略、Dashboard、Qwen/Hermes 调度或真实交易。
+数据采集、回填、对账、walk-forward 研究均不要求 GPT、Ollama 或本地 Agent。当前仍未实现 VectorBT 完整策略、Dashboard、Qwen/Hermes 调度或真实交易。
 
 ## 实际数据状态
 
@@ -101,3 +104,11 @@ Step 4.2 已从 BaoStock 实际下载 2024Q1 qfq：`000001.SZ`、`600519.SH`、`
 独立数据集为 `data/processed/ashare_research_dataset_baostock_qfq_v1.parquet`，manifest 记录 BaoStock、qfq、逐股调整快照时间、数据版本、特征/目标版本和非 PIT 限制。Readiness Gate PASS：训练 12,491、验证 2,552、测试 5,280 行，测试期 480 个日期、每日截面 11 股。已完成且仅完成一次 `Baseline Real Market Experiment v1`：测试 MAE 0.03179、RMSE 0.04800、Pearson IC 均值 -0.08343、Rank IC 均值 -0.06794。它是预测误差与横截面排序结果，不是策略回测或盈利能力结论。模型与全部诊断产物见 `artifacts/experiments/20261004T120849Z_2cb6448746/`；重新加载后固定输入预测一致。
 
 qfq 是 2026-10-04 获取的 BaoStock 供应商快照；历史公司行动信息并非当时可见的 point-in-time 重建。样本池存在幸存者偏差，结果仅为研究基线，不能据此推断可交易表现。Step 4.2 的实际下载、门禁、模型指标和未完成事项记录在 [`docs/project_status.md`](docs/project_status.md) 与 [`docs/development_log.md`](docs/development_log.md)。
+
+## Step 4.3：Walk-forward 与 scale-invariant 特征诊断
+
+当前 checkpoint 为 `661596e chore: checkpoint step 4.2 real lightgbm baseline`；Step 4.3 代码与文档仍为未提交工作区改动。原 Baseline Real Market Experiment v1 保持不变，其 2024–2025 Test Pearson IC `-0.08343`、Rank IC `-0.06794` 仍保留。该区间现在登记为 `LEGACY_OBSERVED_TEST`，本阶段没有为 v2 生成任何 2024 年及以后预测或指标。
+
+新增 `ashare_daily_v2_scale_invariant`，不包含绝对价格/成交量均线或 symbol ID，target 仍为 `target_5d`。在同一 11 股 BaoStock qfq 快照和固定 LightGBM 参数下，使用 2018–2023 的三个 expanding-window folds 对比 v1/v2。每折均按全局日期切分、五期 `label_end_date` purge 和 5-session embargo；v1/v2 验证 sample keys、target 和 label end date 完全相同。完整结果见 [`artifacts/reports/walkforward_comparison_2ee1453e2be5.json`](artifacts/reports/walkforward_comparison_2ee1453e2be5.json)，逐折产物在 `artifacts/experiments/walkforward_*/`。
+
+本轮 v2 误差均值略低（MAE `0.03889` 对 `0.03934`；RMSE `0.05038` 对 `0.05071`），但横截面方向诊断变差：v1 的 fold mean Rank IC 为 `0.05045 / 0.04620 / 0.02500`，v2 为 `-0.00761 / -0.02884 / -0.01516`；正 Rank IC 日比例均值为 `53.08%` 对 `46.91%`。因此 v2 标记 `development_only`，不是候选模型或已验证模型。v1 的跨股票尺度审计发现，MA_5 与每股中位收盘价相关系数 `0.9999998`，Volume_MA20 与每股中位成交量相关系数 `0.9999115`（11 股描述性诊断）。Step 4.3 只做研究诊断，不做参数搜索、策略回测或扩大股票池；详情见 [`docs/project_status.md`](docs/project_status.md)。

@@ -1,0 +1,28 @@
+{
+  "schema_version": "1.0",
+  "development_prediction_date_end": "2023-12-31",
+  "development_label_end_exclusive": "2024-01-01",
+  "sealed_holdout": {
+    "role": "future_sealed_holdout",
+    "start": "2026-01-01",
+    "used": false,
+    "data_requested": false,
+    "note": "Protocol metadata only. Do not access, fetch, evaluate, or report these observations until the feature and universe are frozen in a future approved stage."
+  },
+  "experiments": {
+    "20261004T120849Z_2cb6448746": {
+      "name": "Baseline Real Market Experiment v1",
+      "evaluation_role": "legacy_observed_test",
+      "immutable": true,
+      "manifest_sha256": "b997e2960aa3871306ab708cfbccf15dbb86718c4dcc94b17a29c54a007688e9",
+      "legacy_test_period": ["2024-01-01", "2025-12-31"],
+      "selection_use_prohibited": true,
+      "note": "Role is recorded in this governance registry because the experiment manifest is frozen and must remain byte-for-byte unchanged."
+    }
+  },
+  "allowed_new_evaluation_roles": ["development_walk_forward", "legacy_observed_test", "future_sealed_holdout"],
+  "development_walk_forward_forbidden_prediction_start": "2024-01-01",
+  "prohibited_uses_of_legacy_observed_test": [
+    "feature_selection", "hyperparameter_selection", "model_acceptance", "feature_direction_selection", "prediction_inversion"
+  ]
+}
