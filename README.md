@@ -121,3 +121,7 @@ Step 4.4 沿用 Feature v1、固定 LightGBM 参数及 2018–2023 三个 expand
 在 A∩B∩C 完全相同的验证键上，三折 Rank IC（Raw / Pool Excess / CS Rank）为 `0.05045 / -0.05076 / -0.04663`、`0.04620 / 0.03440 / 0.05600`、`0.02500 / -0.04036 / -0.01877`。跨折均值为 `0.04055 / -0.01891 / -0.00313`，正 Rank IC 日比例为 `53.08% / 46.35% / 48.79%`。两种新目标都未满足预设候选条件，结论为 **`no_target_upgrade`**，保留 Raw Return control。目标构造检查中，Pool Excess 1,452 个有效日期的最大绝对日均值为 `1.77e-17`；CS Rank 对原收益的逐日排序单调一致。
 
 报告为 [`target_comparison_28b36e885c5a.json`](artifacts/reports/target_comparison_28b36e885c5a.json)，逐日目标构造诊断为 `artifacts/reports/target_cross_section_diagnostics_28b36e885c5a.csv`。三个独立实验和带版本的数据集清单均保存在本地 `artifacts/` 与 `data/processed/`，并由 `.gitignore` 排除。测试环境仍是 Python 3.14.6。qfq 是供应商历史快照而非 point-in-time 还原；当前 11 股工程池存在幸存者偏差。没有读取 Legacy Test 或 2026+ Holdout，也没有进行回测、调参或扩大 Universe。
+
+## Step 4.5：Universe breadth expansion 状态
+
+Step 4.4 本地检查点为 `c4ca573 chore: checkpoint step 4.4 cross-sectional target study`。Step 4.5 已检查本地数据 Provider，但候选元数据请求受网络代理错误阻断：BaoStock 登录成功后全量基本资料/行业查询未返回记录，AKShare 交易所股票列表返回 `ProxyError`。因此没有冻结 U50/U100、下载任何新行情或运行新增模型实验；U11 control 保持原样。详细执行证据与恢复条件见 [`docs/step_4_5_universe_expansion.md`](docs/step_4_5_universe_expansion.md)。当前不能对 breadth 支持性作研究结论。

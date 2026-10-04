@@ -259,3 +259,6 @@ BaoStock qfq 接口真实测试：`000001.SZ`、`600519.SH`、`300750.SZ` 在 20
 Step 4.2 新增 `src/quantlab/research/price_basis.py` 及 CLI `data compare-bases`；扩展研究构建 CLI 的独立 universe 参数和 manifest 的逐股调整快照、dataset/target 版本；readiness 按显式 manifest 口径检查；模型 CLI 支持明确传入 dataset、manifest、experiment name；报告纳入 IC 汇总/ICIR、覆盖、按年/季度/证券误差、预测分布、特征 gain/split 和 lineage。离线回归总计 62 项通过，新增 price basis fixture；原 61 项继续通过。Python `compileall`、完整 unittest、uv 兼容检查以及真实模型 reload parity 均完成。
 
 未完成项仍包括 point-in-time 公司行动重建、样本池幸存者偏差校正、港股数据源、交易策略回测、Dashboard、Qwen/Hermes 及任何券商功能。Step 4.2 已停止在基线实验验收后，没有开始下一阶段。
+# Step 4.5 metadata acquisition audit (2026-10-05)
+
+Step 4.5 could not pass the candidate-universe metadata gate. The BaoStock 0.9.4 SDK was installed and login succeeded, but its full basic-security and industry metadata queries did not return within more than 30 seconds. The fallback AKShare 1.19.1 listing requests for SSE and SZSE failed with `ProxyError`; the sanitized failure record is ignored under `data/raw/`. Tushare is installed but reports unavailable because no credential is configured. No candidate list or market bars were produced, so no U50/U100 features or walk-forward metrics exist. No Step 4.5 code path read or evaluated Legacy Test or sealed-holdout data. See [`step_4_5_universe_expansion.md`](step_4_5_universe_expansion.md) for the execution record and resume condition.

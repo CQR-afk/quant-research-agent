@@ -1,5 +1,9 @@
 # 开发日志
 
+## 2026-10-05 — Step 4.5 宽度扩展预检
+
+按要求先提交 Step 4.4 本地检查点 `c4ca573`。92 项 unittest 通过，`uv pip check` 检查 107 个包全部兼容。之后检查到 BaoStock SDK 0.9.4 可登录，但全量股票基础资料/行业请求持续无响应；AKShare 1.19.1 的 SSE/SZSE A 股上市清单请求失败于代理错误。Tushare 缺少凭据。没有可验证的候选证券元数据，因此没有冻结候选池、下载新行情或训练/评估；U11 control、Walk-forward 切分及实验产物均未改动。完整限制与恢复条件见 [`step_4_5_universe_expansion.md`](step_4_5_universe_expansion.md)。
+
 ## 2026-10-04 — Step 3：A 股数据管线与本地研究数据库
 
 ### 实施内容

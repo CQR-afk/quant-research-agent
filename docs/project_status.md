@@ -145,3 +145,7 @@ LightGBM 2024 年 MAE/RMSE 为 0.03739/0.05646，Pearson/RankIC 均值 -0.03977/
 常用入口仍有 `quantlab run`、`quantlab news`；另有 `quantlab data download/update/validate/status/query/backfill/backfill-status/providers/reconcile/compare-bases/factors/adjusted-view`、`quantlab research build-dataset/dataset-status/readiness`、`quantlab model train/evaluate/experiments`。`data compare-bases` 对同源 none/qfq 比价并仅机械标记超过阈值的单日变化，不做自动公司行动判断或价格修复。
 
 尚未完成：point-in-time 公司行动因子还原、历史成分股/退市股宇宙、HK Provider、全面停牌日历、正式因子研究、VectorBT 策略回测、Streamlit Dashboard、Qwen/Hermes Agent，以及任何券商交易连接。Step 4.2 到此暂停，未开始下一阶段。
+
+## Step 4.5 执行状态
+
+Step 4.4 检查点 `c4ca573 chore: checkpoint step 4.4 cross-sectional target study` 已建立，提交前全套 92 项测试通过，`uv pip check` 的 107 个包兼容。Step 4.5 在候选 Universe 冻结之前停止：BaoStock 0.9.4 登录成功，但全量证券基础资料/行业元数据查询在 30 秒以上仍未返回；AKShare 1.19.1 的 SSE/SZSE A 股列表请求失败于 `ProxyError`。Tushare 未配置凭据。尚无候选记录、U50/U100 清单或新增行情；没有继续进入特征或模型运行。U11 control 未改动。执行记录见 [`step_4_5_universe_expansion.md`](step_4_5_universe_expansion.md)。后续需要先恢复到 BaoStock 或交易所列表端点的网络访问，再从实际返回的元数据构建候选顺序。
