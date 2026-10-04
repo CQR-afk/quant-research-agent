@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "quantlab"
+version = "0.1.0"
+description = "Quant Research Agent: local market research with optional online GPT news context."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "numpy>=2.0",
+  "pandas>=2.2",
+  "scikit-learn>=1.5",
+  "yfinance>=0.2.50",
+  "openai>=1.66",
+  "python-dotenv>=1.0",
+  "akshare==1.19.1",
+  "duckdb>=1.1",
+  "pyarrow>=18",
+]
+
+[project.optional-dependencies]
+quant-stack = [
+  "lightgbm>=4.5",
+  "vectorbt>=0.27",
+  "numba>=0.61",
+]
+
+[project.scripts]
+quantlab = "quantlab.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
