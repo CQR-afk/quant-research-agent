@@ -11,9 +11,17 @@ from quantlab.config import settings
 from quantlab.market_data import download_daily_prices
 from quantlab.modeling import train_and_evaluate
 from quantlab.news import format_news_note, research_news
-from quantlab.data.service import download_market_data_batch, get_data_status, query_market_data, validate_market_data
+from quantlab.data.service import (
+    download_adjustment_factors, download_market_data_routed, get_data_status,
+    query_market_data, update_market_data_routed, validate_market_data,
+)
+from quantlab.data.backfill import backfill_market_data, backfill_status
+from quantlab.data.reconciliation import reconcile_providers
+from quantlab.data.adjusted import build_adjusted_price_view
+from quantlab.providers.router import ProviderRouter
 from quantlab.experiments import evaluate_saved_experiment, list_experiments, train_lightgbm
 from quantlab.research.dataset import build_research_dataset, dataset_status
+from quantlab.research.gate import evaluate_dataset_readiness
 
 
 def _safe_ticker(ticker: str) -> str:
@@ -74,12 +82,41 @@ def build_parser() -> argparse.ArgumentParser:
                           required=command != "query")
         item.add_argument("--start", type=_parse_date, default=None)
         item.add_argument("--end", type=_parse_date, default=None)
-        item.add_argument("--adjustment", choices=("none", "qfq", "hfq"), default="qfq")
+        item.add_argument("--adjustment", choices=("none", "qfq", "hfq"), default="none")
+        item.add_argument("--provider", default="auto", help="provider name or auto")
         if command == "update":
             item.add_argument("--full-refresh", action="store_true")
         if command == "query":
             item.set_defaults(ticker=None)
     data_commands.add_parser("status", help="show locally stored market-data status")
+    data_commands.add_parser("providers", help="show provider availability and capabilities")
+    backfill = data_commands.add_parser("backfill", help="run one resumable historical-data batch")
+    backfill.add_argument("--market", choices=("ashare",), default="ashare")
+    backfill.add_argument("--universe", default=None)
+    backfill.add_argument("--start", type=_parse_date, default=date(2018, 1, 1))
+    backfill.add_argument("--end", type=_parse_date, default=date(2025, 12, 31))
+    backfill.add_argument("--adjustment", choices=("none", "qfq", "hfq"), default="none")
+    backfill.add_argument("--provider", default="auto")
+    backfill.add_argument("--retry-failed-only", action="store_true")
+    backfill.add_argument("--limit", type=int, default=None)
+    data_commands.add_parser("backfill-status", help="show resumable backfill jobs")
+    adjusted_view = data_commands.add_parser("adjusted-view", help="read one provider's stored price basis and provenance")
+    adjusted_view.add_argument("--ticker", required=True)
+    adjusted_view.add_argument("--start", type=_parse_date, default=None)
+    adjusted_view.add_argument("--end", type=_parse_date, default=None)
+    adjusted_view.add_argument("--adjustment", choices=("none", "qfq", "hfq"), default="none")
+    adjusted_view.add_argument("--provider", default=None)
+    factors = data_commands.add_parser("factors", help="download independent adjustment factors")
+    factors.add_argument("--ticker", required=True)
+    factors.add_argument("--start", type=_parse_date, default=None)
+    factors.add_argument("--end", type=_parse_date, default=None)
+    reconcile = data_commands.add_parser("reconcile", help="compare providers over a small window")
+    reconcile.add_argument("--ticker", required=True)
+    reconcile.add_argument("--provider-a", required=True)
+    reconcile.add_argument("--provider-b", required=True)
+    reconcile.add_argument("--start", type=_parse_date, required=True)
+    reconcile.add_argument("--end", type=_parse_date, required=True)
+    reconcile.add_argument("--adjustment", choices=("none", "qfq", "hfq"), default="none")
 
     research = subparsers.add_parser("research", help="build and inspect model-ready datasets")
     research_commands = research.add_subparsers(dest="research_command", required=True)
@@ -87,7 +124,12 @@ def build_parser() -> argparse.ArgumentParser:
     build_dataset.add_argument("--start", type=_parse_date, default=None)
     build_dataset.add_argument("--end", type=_parse_date, default=None)
     build_dataset.add_argument("--adjustment", choices=("none", "qfq", "hfq"), default=None)
+    build_dataset.add_argument("--provider", default=None)
+    build_dataset.add_argument("--output", default=None, help="optional output Parquet path")
     research_commands.add_parser("dataset-status", help="show model-ready dataset coverage and lineage")
+    readiness = research_commands.add_parser("readiness", help="evaluate the data gate without fitting a model")
+    readiness.add_argument("--dataset", default=None)
+    readiness.add_argument("--manifest", default=None)
 
     model = subparsers.add_parser("model", help="train and inspect research models")
     model_commands = model.add_subparsers(dest="model_command", required=True)
@@ -113,10 +155,19 @@ def _run_data(args) -> None:
     if args.data_command == "status":
         print(get_data_status().to_string(index=False))
     elif args.data_command in {"download", "update"}:
-        outcomes = download_market_data_batch(
-            args.ticker, market=args.market, start=args.start, end=args.end, adjustment=args.adjustment,
-            update=args.data_command == "update", full_refresh=getattr(args, "full_refresh", False),
-        )
+        router = ProviderRouter()
+        outcomes = []
+        for ticker in args.ticker:
+            if args.data_command == "update":
+                outcomes.append(update_market_data_routed(
+                    ticker, market=args.market, start=args.start, end=args.end, adjustment=args.adjustment,
+                    provider=args.provider, full_refresh=args.full_refresh, router=router,
+                ))
+            else:
+                outcomes.append(download_market_data_routed(
+                    ticker, market=args.market, start=args.start, end=args.end, adjustment=args.adjustment,
+                    provider=args.provider, router=router,
+                ))
         for result in outcomes:
             printable = {key: value for key, value in result.items() if key != "issues"}
             print(json.dumps(printable, default=str, indent=2))
@@ -125,18 +176,38 @@ def _run_data(args) -> None:
             raise RuntimeError(f"{len(failed)} ticker task(s) failed or were rejected; other symbols were processed and outcomes recorded.")
     elif args.data_command == "validate":
         for ticker in [args.ticker] if isinstance(args.ticker, str) else args.ticker:
-            result = validate_market_data(ticker, adjustment=args.adjustment)
+            result = validate_market_data(ticker, adjustment=args.adjustment, provider=None if args.provider == "auto" else args.provider)
             print(f"{ticker}: valid={result.is_valid}, accepted={len(result.accepted)}, rejected={len(result.rejected)}")
             if not result.issues.empty:
                 print(result.issues.to_string(index=False))
     elif args.data_command == "query":
         print(query_market_data(ticker=args.ticker, market=args.market, start=args.start, end=args.end,
-                                adjustment=args.adjustment).to_string(index=False))
+                                adjustment=args.adjustment, source=None if args.provider == "auto" else args.provider).to_string(index=False))
+    elif args.data_command == "providers":
+        print(json.dumps(ProviderRouter().statuses(), ensure_ascii=False, indent=2))
+    elif args.data_command == "backfill":
+        result = backfill_market_data(universe=args.universe, start=args.start, end=args.end,
+                                      adjustment=args.adjustment, provider=args.provider,
+                                      retry_failed_only=args.retry_failed_only, limit=args.limit)
+        print(json.dumps(result, ensure_ascii=False, default=str, indent=2))
+    elif args.data_command == "backfill-status":
+        print(backfill_status().to_json(orient="records", force_ascii=False, date_format="iso", indent=2))
+    elif args.data_command == "adjusted-view":
+        result = build_adjusted_price_view(args.ticker, args.start, args.end, args.adjustment, args.provider)
+        print(result.to_json(orient="records", force_ascii=False, date_format="iso", indent=2))
+    elif args.data_command == "factors":
+        print(json.dumps(download_adjustment_factors(args.ticker, start=args.start, end=args.end),
+                         ensure_ascii=False, default=str, indent=2))
+    elif args.data_command == "reconcile":
+        print(json.dumps(reconcile_providers(args.ticker, provider_a=args.provider_a,
+                         provider_b=args.provider_b, start=args.start, end=args.end,
+                         adjustment=args.adjustment), ensure_ascii=False, default=str, indent=2))
 
 
 def _run_research(args) -> None:
     if args.research_command == "build-dataset":
-        result = build_research_dataset(start=args.start, end=args.end, adjustment=args.adjustment)
+        result = build_research_dataset(start=args.start, end=args.end, adjustment=args.adjustment,
+                                        provider=args.provider, output_path=args.output)
         print(json.dumps({"dataset_path": str(result.dataset_path), "manifest_path": str(result.manifest_path),
                           "manifest": {key: value for key, value in result.manifest.items() if key != "coverage"},
                           "coverage": result.coverage.to_dict("records")}, ensure_ascii=False, default=str, indent=2))
@@ -145,6 +216,9 @@ def _run_research(args) -> None:
         if result.get("status") == "available":
             result = {key: value for key, value in result.items() if key != "coverage"}
         print(json.dumps(result, ensure_ascii=False, default=str, indent=2))
+    elif args.research_command == "readiness":
+        print(json.dumps(evaluate_dataset_readiness(dataset_path=args.dataset, manifest_path=args.manifest),
+                         ensure_ascii=False, default=str, indent=2))
 
 
 def _run_model(args) -> None:

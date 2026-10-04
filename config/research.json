@@ -1,7 +1,14 @@
 {
   "schema_version": "1.0",
-  "adjustment": "qfq",
-  "source": "akshare",
+  "market": "CN_A",
+  "price_basis": "canonical_unadjusted_vendor",
+  "adjustment": "none",
+  "provider": null,
+  "date_range": {
+    "start": "2018-01-01",
+    "end": "2025-12-31"
+  },
+  "universe": "config/ashare_universe.json",
   "feature_version": "ashare_daily_v1",
   "target": "target_5d",
   "target_horizon_observations": 5,

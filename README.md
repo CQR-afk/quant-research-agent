@@ -1,74 +1,93 @@
 # Quant Research Agent
 
-Quant Research Agent 是一个 A 股优先、港股其次的本地金融研究项目。它采集并验证市场数据，构建研究特征与标签，提供 readiness-gated 的 LightGBM 五观察期收益率实验。项目用于研究和预测，不连接券商账户，也不提供自动下单。
+Quant Research Agent 是一个 A 股优先、港股其次的本地量化研究项目。它提供行情接入、数据质量验证、本地数据存储、研究数据集和 readiness-gated LightGBM 基线工程。当前定位是研究与预测；不连接券商账户，不提供自动下单。
 
-## 当前实现
+## 目前实现
 
-- `quantlab run` 保留 Yahoo Finance 日线和 Logistic Regression Baseline Direction Classifier，按时间顺序评估。
-- `quantlab news` 是可选的独立 OpenAI Responses API 新闻研究入口；需显式配置密钥，不参与离线数据处理或训练。
-- `quantlab data` 使用 AKShare `stock_zh_a_hist` 采集 A 股日线。Raw 响应与标准化数据分层保存，质量检查后进入 DuckDB + Parquet。采集失败按股票记录，不覆盖已有有效行情。
-- `quantlab research build-dataset` 从本地 DuckDB 构建股票逐日特征、五观察期收益标签和覆盖报告；标签记录 `prediction_date`、`label_end_date` 及数据版本。支持显式 `none`、`qfq`、`hfq` 单一复权口径。
-- `quantlab model train --model lightgbm` 先执行数据就绪门禁；只有所有门槛通过才拟合模型。成功时按独立实验 ID 保存模型、样本外预测、每日 IC 和报告。`evaluate` 重载固定模型并核验预测一致性，`experiments` 列出历史实验。
-- LightGBM 输入包含 17 个逐股计算的价格收益、均线、RSI、MACD、波动率及成交量特征。Train/Validation/Test 使用全局日期切分，标签边界 purge 并设置交易日 embargo。训练集均值和 5 日历史动量是同一测试样本上的回归参照。
+- `quantlab run` 保留 Yahoo Finance 日线和 Logistic Regression 基线方向分类器，使用时间顺序评估；SPY 仍作为兼容性样例。
+- `quantlab news` 是可选 OpenAI Responses API 新闻研究入口。需要在本地 `.env` 配置新密钥。新闻入口独立于本地数据和模型流程。
+- `quantlab data download/update` 通过 Provider Router 接入 BaoStock、AKShare 和 Tushare。路由遵循 `config/data_sources.json` 的顺序，单次证券/日期区间只接受一个 Provider 的完整响应；不会把缺口从不同供应商静默拼起来。Tushare 无令牌时会显示不可用并跳过。
+- BaoStock 支持不复权、前复权、后复权，并保存 `tradestatus`、`isST` 等供应商元数据。AKShare 保留原有字段映射。Tushare 日线作为不复权基础价格，复权因子单独存入 DuckDB，不会直接改写 OHLC。
+- 标准化行情经质量校验后进入 DuckDB + Parquet；原始响应和校验后研究数据分层保存。来源、接口版本、采集时间、数据修订及回填任务状态均有独立记录。
+- `quantlab data backfill` 每次按小批次运行、使用 DuckDB 检查点恢复；默认使用 `config/ashare_universe.json` 的样本池，已完成股票不会重复抓取。每个回填任务固定一个 Provider。
+- `quantlab data reconcile` 对两个 Provider 的有限日期响应作并列对账，输出日期缺口和字段差异报告；它不会自动选源或写入行情库。
+- `quantlab research build-dataset` 从本地 DuckDB 构建逐股特征、未来五个有效观察期收益标签及覆盖报告。数据集只选一个 Provider；若指定复权口径存在多个来源，必须显式指定 `--provider`。
+- `quantlab model train --model lightgbm` 运行前执行数据就绪门禁；门禁失败时不拟合。正式真实行情训练仍取决于充分、可审计的真实历史数据。
 
-该模型服务与离线合成 Fixture 测试已实现；**当前真实数据未通过 Readiness Gate，因此本地没有用真实 A 股样本完成的正式 LightGBM 训练结果。**不得将离线 Fixture 指标当作市场研究结果。
+## Provider 单位与价格口径
 
-## 数据和研究限制
+标准行情使用 `market/exchange/symbol/trade_date`、OHLC、`volume`、`amount`、`adjustment/currency/source/downloaded_at` 等字段。代码始终作为字符串保存，以保留前导零。
 
-股票池在 [`config/ashare_universe.json`](config/ashare_universe.json) 中配置，目前是 12 只当前可见股票组成的工程验证样本，未包含历史成分股及退市证券，存在幸存者偏差。数据研究范围配置为 2018–2025；不推断股票上市前历史，也不把缺失交易记录判作停牌。
+| Provider | 原始行情与单位 | 复权/可用信息 |
+|---|---|---|
+| Tushare Pro | `daily` 返回不复权 OHLC；`vol` 按手计、`amount` 按千元计，项目转换为股与人民币元 | `adj_factor` 单独按供应商和交易日版本化保存；因子不自动用于重算 OHLC |
+| BaoStock | 日线 `volume` 为股、`amount` 为人民币元；附带 `adjustflag`、`tradestatus`、`isST` | `adjustflag` 区分 hfq/qfq/none；复权结果标记为供应商快照 |
+| AKShare | `stock_zh_a_hist` 中文字段映射；成交量从手转换为股，成交额按人民币元保存 | none/qfq/hfq 按独立数据键与分区保存 |
+| Yahoo Finance | 保留美股及兼容性接口 | 供应商调整数据标记为 `vendor_adjusted`，不作为 A 股主数据源 |
 
-交易日历使用固定版本 `exchange_calendars` 的 XSHG 预计算日历，在本项目配置的 2018–2025 范围内覆盖上海交易所交易日和节假日。[XSHG 日历定义及其节假日来源说明](https://github.com/gerrymanoim/exchange_calendars/blob/master/exchange_calendars/exchange_calendar_xshg.py) [固定依赖版本](https://pypi.org/project/exchange_calendars/4.13.2/)。它是本地预计算日历，不是交易所实时交易日服务；正式研究前应核对日历更新及个股停复牌资料。
+口径参考：[Tushare daily 文档](https://tushare.pro/document/1?doc_id=27)、[Tushare 复权因子文档](https://tushare.pro/document/2?doc_id=28)、[BaoStock SDK 文档](https://pypi.org/project/baostock/)。供应商返回值及复权快照都带接口与版本元数据。`none` 是当前规范不复权价格基准；qfq/hfq 是供应商快照，后续公司行动可能改写历史值。系统尚未做 point-in-time 因子还原，不应把调整快照当作严格 point-in-time 价格。
 
-当前 qfq 历史价格是事后获取的复权快照，可能因后续公司行动而修订；系统保留数据版本及历史修订记录，但没有 Point-in-Time 公司行动还原，不能据此声称严格无前视的历史可交易回测。当前固定股票池也不能代表同期可投资全市场。
+## 本地数据流程
 
-## 环境与测试
+```text
+Provider response -> data/raw -> schema normalization -> validation
+                   -> data/validated Parquet + DuckDB catalog
+                   -> research dataset / adjusted view
+```
 
-当前环境保留 Python 3.14.6。AKShare 1.19.1、LightGBM、DuckDB、PyArrow 和 `exchange-calendars` 使用项目虚拟环境；不需要 GPT 或 Ollama 才能管理数据或运行本地模型。用 PowerShell 安装或复用项目环境：
+`data/raw/`、`data/validated/`、`data/processed/` 和 `data/database/quantlab.duckdb` 均在 `.gitignore` 中排除。行键包含 Provider 与复权方式，更新采用版本化快照；同一响应重复导入保持幂等。不同来源、复权口径互不覆盖。缺失交易日期若没有权威停牌/交易日历证据，仍报告为 Unknown。
+
+Tushare 凭据可在 `.env` 中设 `TUSHARE_TOKEN=`；OpenAI 新闻密钥使用 `OPENAI_API_KEY=`。本地数据与模型命令不要求配置上述密钥。日志和 CLI 状态只显示是否缺少凭据，不输出密钥。`.env` 不提交。
+
+## 环境和测试
+
+保留项目 Python 3.14.6 虚拟环境，不替换系统 Python。依赖通过 `pyproject.toml` 安装：
 
 ```powershell
 .\setup.ps1
-```
-
-测试仅使用本地 Fixtures，可离线运行：
-
-```powershell
 .\.venv\Scripts\python.exe -m unittest discover -s tests -v
 ```
+
+本地检查包括 provider 单位映射、复权隔离、因子修订、回填恢复、查询防混源、对账、Parquet/DuckDB 持久化，以及原有模型和 GPT Mock 测试。Mock/Fixture 结果仅说明离线代码路径通过，不代表上游实时服务可用。
 
 ## 常用命令
 
 ```powershell
-# 按配置股票池逐只下载，单只失败会单独记录
-quantlab data download --market ashare --ticker 000001.SZ 600519.SH --start 20180101 --end 20251231 --adjustment qfq
+# Provider 能力、SDK 和凭据可用性（不发起行情请求）
+quantlab data providers
 
-# 更新最近数据，默认回看重抓以捕获历史修订
-quantlab data update --market ashare --ticker 000001.SZ --adjustment qfq
+# 单只股票下载，none/qfq/hfq 分开保存；auto 按配置顺序选择一个来源
+quantlab data download --market ashare --ticker 000001.SZ --start 20240101 --end 20240331 --adjustment none --provider auto
 
+# 按来源单独更新并重抓重叠区间，以捕获历史修订
+quantlab data update --market ashare --ticker 000001.SZ --adjustment none --provider baostock
+
+# 小批次、可恢复的历史回填
+quantlab data backfill --start 20180101 --end 20251231 --adjustment none --provider auto --limit 3
+quantlab data backfill-status
+
+# Provider 对账；只比较，不自动合并
+quantlab data reconcile --ticker 000001.SZ --provider-a baostock --provider-b akshare --start 20240101 --end 20240331 --adjustment none
+
+# 独立下载 Tushare 复权因子、检查数据状态及来源
+quantlab data factors --ticker 000001.SZ --start 20240101 --end 20240331
 quantlab data status
-quantlab data validate --market ashare --ticker 000001.SZ --adjustment qfq
-quantlab data query --market ashare --ticker 000001.SZ --start 20240101 --end 20240331 --adjustment qfq
+quantlab data query --market ashare --ticker 000001.SZ --start 20240101 --end 20240331 --adjustment none --provider baostock
+quantlab data adjusted-view --ticker 000001.SZ --start 20240101 --end 20240331 --adjustment qfq --provider baostock
 
-quantlab research build-dataset --start 20180101 --end 20251231 --adjustment qfq
+# 研究数据集（小样本下仅建数据集和就绪报告，不自动训练）
+quantlab research build-dataset --start 20180101 --end 20251231 --adjustment none --provider baostock
 quantlab research dataset-status
-quantlab model train --model lightgbm
-quantlab model evaluate --model lightgbm
-quantlab model experiments
 
 # 保留的旧入口
 quantlab run --ticker SPY --period 5y
 quantlab news --ticker 000001.SZ
 ```
 
-`data/` 保存 raw、validated、processed Parquet 及 `database/quantlab.duckdb`。`artifacts/models/`、`artifacts/experiments/` 与 `artifacts/reports/` 保存本地模型及研究报告。这些目录、`.env`、虚拟环境和日志均由 `.gitignore` 排除。
+数据采集、回填和对账不要求 GPT、Ollama 或本地 Agent。当前仍未实现 VectorBT 完整策略、Dashboard、Qwen/Hermes 调度或真实交易。
 
-## Step 4 实测状态（2026-10-04）
+## 实际数据状态
 
-本地数据库包含来自此前 Step 3 实际 AKShare 下载的 `000001.SZ` 和 `600519.SH`，各 58 条 2024-01-02 至 2024-03-29 的 qfq 日线，共 116 条。为扩展历史，真实尝试 `000001.SZ`、`600519.SH`、`300750.SZ` 的 2018-01-01 至 2025-12-31 qfq 行情；三只股票均在 3 次请求后返回上游 `RemoteDisconnected`，所以没有新增历史记录，也没有继续批量请求。
+此前 Step 3/4 的本地库有 AKShare 获取的 `000001.SZ` 和 `600519.SH`，各 58 行、2024 年第一季度 qfq 快照，共 116 行。Step 4 的五日收益研究数据集有 116 行、106 个标签，但 60 日窗口不足以产生完整特征。真实历史扩展曾因上游 `RemoteDisconnected` 失败；Step 4 的 Readiness Gate 因数据不足阻止了真实行情训练。
 
-真实本地数据集写入 `data/processed/ashare_research_dataset_v1.parquet`，覆盖配置池 12 只股票；其中 2 只在本地有数据，数据集 116 行、106 个五日标签，但因最大窗口为 60 个观察值，完整特征行为 0。Readiness Gate 因股票数量不足、有效特征与各切分样本不足而失败，LightGBM 没有拟合。门禁报告位于 `artifacts/reports/readiness_20261004T095558Z_3f481243.json`。交易日历在 2018-01-02 至 2025-12-31 提供 1,942 个 session。
-
-新增 16 项 Step 4 离线测试及原有 29 项测试均通过（总计 45 项）。详细实施记录见 [`docs/development_log.md`](docs/development_log.md)。
-
-当前源码、环境、数据、模型逻辑、实测结果、Git 状态与限制的详细汇总见 [`docs/project_status.md`](docs/project_status.md)。
-
-后续开发应先恢复可靠的 AKShare 网络采集，分批补齐配置池的历史数据，再重建数据集并评估门禁；本步骤到此暂停。VectorBT、GPT 新闻增强、Hermes、Dashboard 与交易功能尚未开发。
+Step 4.1 新 Provider 的离线测试与真实网络验证分别记在 [`docs/development_log.md`](docs/development_log.md) 和 [`docs/engineering_audit.md`](docs/engineering_audit.md)。只把实际成功响应计入线上验证；不可用凭据、网络拦截或上游限制会明确列出。

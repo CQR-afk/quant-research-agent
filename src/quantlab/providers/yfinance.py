@@ -10,6 +10,7 @@ import yfinance as yf
 
 from quantlab.data.schema import normalize_daily_bars
 from quantlab.providers.base import MarketDataProvider
+from quantlab.providers.capabilities import ProviderCapabilities
 
 
 class YFinanceProvider(MarketDataProvider):
@@ -22,6 +23,13 @@ class YFinanceProvider(MarketDataProvider):
     @property
     def version(self) -> str:
         return version("yfinance")
+
+    @property
+    def capabilities(self) -> ProviderCapabilities:
+        return ProviderCapabilities(
+            daily_bars=True, raw_prices=True, markets=("US", "CN_A", "HK"),
+            adjustments=("none", "vendor_adjusted"),
+        )
 
     def fetch_raw_daily_bars(
         self,

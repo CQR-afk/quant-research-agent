@@ -15,6 +15,7 @@ import requests
 from quantlab.data.schema import normalize_daily_bars
 from quantlab.data.symbols import normalize_ashare_symbol
 from quantlab.providers.base import MarketDataProvider
+from quantlab.providers.capabilities import ProviderCapabilities
 
 
 AKSHARE_INTERFACE = "stock_zh_a_hist"
@@ -43,6 +44,13 @@ class AKShareProvider(MarketDataProvider):
     @property
     def version(self) -> str:
         return version("akshare")
+
+    @property
+    def capabilities(self) -> ProviderCapabilities:
+        return ProviderCapabilities(
+            daily_bars=True, raw_prices=True, markets=("CN_A",),
+            adjustments=("none", "qfq", "hfq"),
+        )
 
     def fetch_raw_daily_bars(
         self,

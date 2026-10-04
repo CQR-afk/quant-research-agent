@@ -71,20 +71,41 @@ def build_research_dataset(
     start: date | str | None = None,
     end: date | str | None = None,
     adjustment: str | None = None,
+    provider: str | None = None,
     output_path: Path | str | None = None,
 ) -> DatasetBuildResult:
     """Create per-security causal features and five-observation labels from DuckDB."""
     root = project_root()
-    pool_path = Path(pool_path) if pool_path else root / "config" / "ashare_universe.json"
     config_path = Path(research_config_path) if research_config_path else root / "config" / "research.json"
-    pool, config = _read_json(pool_path), _read_json(config_path)
-    research_start = pd.Timestamp(start or pool["research_start"]).normalize()
-    research_end = pd.Timestamp(end or pool["research_end"]).normalize()
+    config = _read_json(config_path)
+    pool_path = Path(pool_path) if pool_path else Path(str(config.get("universe", "config/ashare_universe.json")))
+    if not pool_path.is_absolute():
+        pool_path = root / pool_path
+    pool = _read_json(pool_path)
+    configured_range = config.get("date_range", {})
+    research_start = pd.Timestamp(start or configured_range.get("start") or pool["research_start"]).normalize()
+    research_end = pd.Timestamp(end or configured_range.get("end") or pool["research_end"]).normalize()
     if research_start > research_end:
         raise ValueError("Research start must be on or before end.")
-    adjustment, source = adjustment or str(config["adjustment"]), str(config["source"])
+    adjustment = adjustment or str(config["adjustment"])
+    market = str(config.get("market", "CN_A"))
+    if market != "CN_A":
+        raise ValueError("The current model-ready dataset builder supports market=CN_A only.")
+    provider = provider or config.get("provider")
     calendar = AShareTradingCalendar(research_start, research_end)
     store = store or MarketDataStore(root / "data")
+    if provider is None:
+        stored = store.status()
+        if not stored.empty:
+            eligible = stored.loc[(stored["market"] == "CN_A") & (stored["adjustment"] == adjustment), "source"]
+            sources = sorted(eligible.dropna().astype(str).unique())
+        else:
+            sources = []
+        if len(sources) > 1:
+            raise ValueError("Multiple providers have data for this adjustment; specify provider explicitly.")
+        source = sources[0] if sources else None
+    else:
+        source = provider
     output_path = Path(output_path) if output_path else root / "data" / "processed" / "ashare_research_dataset_v1.parquet"
     manifest_path = output_path.with_suffix(".manifest.json")
 
@@ -94,7 +115,7 @@ def build_research_dataset(
         identity = normalize_ashare_symbol(str(member["symbol"]))
         if member.get("exchange") != identity.exchange:
             raise ValueError(f"Pool exchange mismatch for {identity.symbol}: expected {identity.exchange}.")
-        bars = store.query(symbol=identity.symbol, market="CN_A", start=research_start.date(),
+        bars = store.query(symbol=identity.symbol, market=market, start=research_start.date(),
                            end=research_end.date(), adjustment=adjustment, source=source)
         if bars.empty:
             coverage_records.append({
@@ -186,14 +207,18 @@ def build_research_dataset(
         "research_start": research_start.date().isoformat(),
         "research_end": research_end.date().isoformat(),
         "adjustment": adjustment,
+        "market": market,
+        "price_basis": "canonical_unadjusted_vendor" if adjustment == "none" else "vendor_snapshot_adjusted",
+        "provider": source,
         "source": source,
+        "date_range": {"start": research_start.date().isoformat(), "end": research_end.date().isoformat()},
         "calendar": calendar.metadata,
         "feature_version": FEATURE_VERSION,
         "feature_columns": FEATURE_COLUMNS,
         "feature_parameters": FEATURE_PARAMETERS,
         "target": "target_5d = close.shift(-5) / close - 1",
         "target_horizon_observations": 5,
-        "point_in_time_limit": "Current qfq histories are exploratory; no point-in-time corporate-action reconstruction.",
+        "point_in_time_limit": "No point-in-time corporate-action reconstruction; provider history may be revised and unadjusted price returns exclude distributions.",
         "survivorship_bias_note": pool["survivorship_bias_note"],
         "dataset_rows": len(dataset),
         "feature_complete_rows": int(dataset[FEATURE_COLUMNS].notna().all(axis=1).sum()) if len(dataset) else 0,

@@ -93,4 +93,64 @@ Readiness Gate 失败：有数据股票 2（要求至少 8）；完整特征行 
 
 最终运行：45 项通过、0 项失败（Step 3 的 29 项全部保留；Step 4 新增 16 项）。另外使用临时本地测试 Fixture 实际训练小型 LightGBM 模型、写入并重载、确认预测一致，以及连续两次实验写入不同 ID；该项仅验证工程路径，不是市场表现。
 
-已更新 README，明确真实采集失败及门禁阻止拟合。数据源目前只有两只股票的 2024Q1 快照，无法支持 2018–2025 研究。当前 qfq 历史不包含 Point-in-Time 公司行动还原；股票池不含历史成分股及退市股，存在幸存者偏差。此阶段结束，不进入 VectorBT、新闻增强、Hermes、Dashboard 或交易开发。
+已更新 README，明确真实采集失败及门禁阻止拟合。Step 4.1 的新状态见下节；以下历史记录不作覆盖。
+
+## 2026-10-04 — Step 4.1：多 Provider 行情与 canonical price layer
+
+### 基线与实现
+
+- Step 4 在本阶段前建立本地检查点：`e82f4c2 chore: checkpoint step 4 research dataset and lightgbm pipeline`。仓库没有 remote，也没有 push。Step 4.1 修改仍未提交。
+- 保留 AKShare、Yahoo Finance、Raw/Validated/Processed、DuckDB/Parquet、12 股样本、17 个特征、五日标签、时间切分/purge/embargo、Readiness Gate、LightGBM 实验服务、Logistic Regression 和 OpenAI news。没有正式训练 LightGBM。
+- 新增 Provider 能力模型和配置路由；Tushare、BaoStock、AKShare、Yahoo 的市场、复权、凭据需求和版本可由 `quantlab data providers` 查看。单只股票一次请求只使用一个 Provider；回填任务固定数据源；多源查询/数据集要求明确指定来源。
+- Tushare 日线仅支持未复权价格。`vol` 从手转换为股，`amount` 从千元转换为人民币元；`adj_factor` 单独版本化，不覆盖 OHLC。无 `TUSHARE_TOKEN`，状态为 `unavailable: missing credential`，未调用上游，也没有声称权限可用。
+- BaoStock 支持 none/qfq/hfq，将 `sz.000001`/`sh.600519` 映射到标准代码；成交量按股、成交额按人民币元；校验返回的 `adjustflag`；`tradestatus`、`isST`、`adjustflag` 存入供应商元数据表。AKShare 和 Yahoo Provider 保留。
+- 新增 `data providers`、`backfill`、`backfill-status`、`reconcile`、`factors`、`adjusted-view` 及 `research readiness` 命令。回填分批检查点、可恢复、可只重试失败项。对账只比较并报告，不自动合并。Readiness 命令只跑门禁，不训练模型。
+- `research.json` 不再固定 `source=akshare`，改用 market/price_basis/adjustment/date_range/universe。旧 qfq 行情和研究集未删改；新未复权数据集单独输出。
+
+### OFFLINE TEST RESULT
+
+原 45 项测试全部保留；Step 4.1 新增 16 项离线测试，全套 `61 passed / 0 failed`。覆盖 Provider 字段/单位映射、缺凭据与权限错误脱敏、复权因子隔离/修订、来源 fallback 与防混源、adjusted view、对账差异/失败报告、回填检查点/断点续跑/失败后继续/只重试失败项、异常行 raw 保留和校验问题写入。测试不依赖任何 Provider 网络或 GPT。
+
+### REAL PROVIDER RESULT：短区间
+
+BaoStock 不复权 2024Q1 实际 CLI 结果：
+
+| 股票 | 获取行数 | 接受/拒绝 | 实际日期 | 状态 |
+|---|---:|---|---|---|
+| 000001.SZ | 58 | 58 / 0 | 2024-01-02 至 2024-03-29 | success |
+| 600519.SH | 58 | 58 / 0 | 2024-01-02 至 2024-03-29 | success |
+| 300750.SZ | 58 | 58 / 0 | 2024-01-02 至 2024-03-29 | success |
+
+AKShare/BaoStock 对 `000001.SZ`、相同区间和 none 口径的真实对账无法完成：BaoStock 返回 58 行；AKShare 三次请求均因本机代理 `127.0.0.1:9` 拒绝连接失败。失败报告为 `artifacts/reports/reconcile_0bccf96f2f464d029d0db361637e20f1.json`，状态 `blocked`，没有合并数据。
+
+### REAL PROVIDER RESULT：2018–2025 分批回填
+
+使用 `quantlab data backfill --market ashare --universe config/ashare_universe.json --start 20180101 --end 20251231 --adjustment none --provider auto --limit 3` 运行四批，job 固定选择 BaoStock。11/12 完成，共 21,257 条有效行情：
+
+| 股票 | 状态 | 首日 | 末日 | 行数 | 复权 |
+|---|---|---|---|---:|---|
+| 000001.SZ | completed | 2018-01-02 | 2025-12-31 | 1,942 | none |
+| 000002.SZ | completed | 2018-01-02 | 2025-12-31 | 1,942 | none |
+| 000333.SZ | completed | 2018-01-02 | 2025-12-31 | 1,942 | none |
+| 000651.SZ | completed | 2018-01-02 | 2025-12-31 | 1,942 | none |
+| 000858.SZ | completed | 2018-01-02 | 2025-12-31 | 1,942 | none |
+| 002594.SZ | completed | 2018-01-02 | 2025-12-31 | 1,942 | none |
+| 300750.SZ | completed | 2018-06-11 | 2025-12-31 | 1,837 | none |
+| 600036.SH | completed | 2018-01-02 | 2025-12-31 | 1,942 | none |
+| 600519.SH | completed | 2018-01-02 | 2025-12-31 | 1,942 | none |
+| 601318.SH | completed | 2018-01-02 | 2025-12-31 | 1,942 | none |
+| 601888.SH | completed | 2018-01-02 | 2025-12-31 | 1,942 | none |
+| 688981.SH | failed validation | — | — | 0 accepted | none |
+
+688981.SH 的上游原始响应有 1,327 条记录，2025-09-01 至 2025-09-08 六条记录成交量和成交额为空。Raw Parquet 保留，校验问题为 `missing_field`，没有填数或推断停牌，未写入正式表。无法确认上市日期/Provider 覆盖的区间仍标记 unknown。Step 3 的 AKShare/qfq 116 行仍保留；Tushare 因无 token 未请求，因子表为 0 行。
+
+### Dataset 与 Readiness Gate
+
+```powershell
+.\.venv\Scripts\quantlab.exe research build-dataset --start 20180101 --end 20251231 --adjustment none --provider baostock --output data/processed/ashare_research_dataset_none_v1.parquet
+.\.venv\Scripts\quantlab.exe research readiness --dataset data/processed/ashare_research_dataset_none_v1.parquet --manifest data/processed/ashare_research_dataset_none_v1.manifest.json
+```
+
+数据集为 21,257 行、21,202 个实现的五观察期标签、20,598 个完整特征样本，11 只股票有数据。Gate `PASS`：Train 12,491、Validation 2,552、Test 5,280；测试期 480 个日期、横截面覆盖率 100%；时序边界 purge 和 5-session embargo 均通过。最终报告 `artifacts/reports/readiness_20261004T114455Z_c61aea87.json`。这是数据充分性/时序门禁，不证明预测能力；没有拟合 LightGBM。
+
+运行环境仍为 Python 3.14.6；NumPy 2.5.3、Pandas 3.0.6、scikit-learn 1.9.1、LightGBM 4.7.0、DuckDB 1.5.6、PyArrow 25.0.1、AKShare 1.19.1、BaoStock 0.9.4、Tushare 1.4.29、exchange-calendars 4.13.2。`uv pip check` 检查 107 个安装包并全部兼容；`compileall` 通过。qfq/hfq 仍是可变供应商快照，未实现 point-in-time 公司行动还原；当前股票池有幸存者偏差。Step 4.1 到此停止。

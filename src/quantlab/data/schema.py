@@ -75,20 +75,21 @@ def normalize_daily_bars(
     for field in numeric:
         frame[field] = pd.to_numeric(frame[field], errors="coerce")
 
-    if frame["trade_date"].isna().any():
-        raise ValueError("Provider data contains invalid trade dates.")
-    if frame["trade_date"].duplicated().any():
-        raise ValueError("Provider data contains duplicate trade dates for one symbol.")
-    prices = frame[["open", "high", "low", "close"]].to_numpy(dtype=float)
-    if not np.isfinite(prices).all() or (prices <= 0).any():
-        raise ValueError("OHLC prices must be finite and positive.")
-    if ((frame["high"] < frame[["open", "close"]].max(axis=1)) | (frame["low"] > frame[["open", "close"]].min(axis=1)) | (frame["high"] < frame["low"])).any():
-        raise ValueError("OHLC values are inconsistent.")
-    if not np.isfinite(frame["volume"].to_numpy(dtype=float)).all() or (frame["volume"] < 0).any():
-        raise ValueError("volume must be finite and non-negative, in shares.")
-    valid_amount = frame["amount"].dropna().to_numpy(dtype=float)
-    if not np.isfinite(valid_amount).all() or (valid_amount < 0).any():
-        raise ValueError("amount must be missing or finite and non-negative, in currency units.")
+    if strict:
+        if frame["trade_date"].isna().any():
+            raise ValueError("Provider data contains invalid trade dates.")
+        if frame["trade_date"].duplicated().any():
+            raise ValueError("Provider data contains duplicate trade dates for one symbol.")
+        prices = frame[["open", "high", "low", "close"]].to_numpy(dtype=float)
+        if not np.isfinite(prices).all() or (prices <= 0).any():
+            raise ValueError("OHLC prices must be finite and positive.")
+        if ((frame["high"] < frame[["open", "close"]].max(axis=1)) | (frame["low"] > frame[["open", "close"]].min(axis=1)) | (frame["high"] < frame["low"])).any():
+            raise ValueError("OHLC values are inconsistent.")
+        if not np.isfinite(frame["volume"].to_numpy(dtype=float)).all() or (frame["volume"] < 0).any():
+            raise ValueError("volume must be finite and non-negative, in shares.")
+        valid_amount = frame["amount"].dropna().to_numpy(dtype=float)
+        if not np.isfinite(valid_amount).all() or (valid_amount < 0).any():
+            raise ValueError("amount must be missing or finite and non-negative, in currency units.")
 
     frame["market"] = market
     frame["exchange"] = exchange

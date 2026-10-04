@@ -1,0 +1,16 @@
+{
+  "schema_version": "1.0",
+  "download": {
+    "providers": ["tushare", "baostock", "akshare"],
+    "default_provider": "auto"
+  },
+  "historical_backfill": {
+    "providers": ["tushare", "baostock", "akshare"],
+    "provider_interval_seconds": {
+      "tushare": 1.0,
+      "baostock": 1.0,
+      "akshare": 1.5
+    },
+    "batch_size": 3
+  }
+}

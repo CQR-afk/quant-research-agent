@@ -8,6 +8,8 @@ from datetime import date
 
 import pandas as pd
 
+from quantlab.providers.capabilities import ProviderCapabilities
+
 
 @dataclass(frozen=True)
 class ProviderBatch:
@@ -22,6 +24,12 @@ class MarketDataProvider(ABC):
 
     name: str
     interface: str
+
+    @property
+    def capabilities(self) -> ProviderCapabilities:
+        return ProviderCapabilities(
+            daily_bars=True, raw_prices=True, markets=(), adjustments=(),
+        )
 
     @abstractmethod
     def fetch_raw_daily_bars(
@@ -74,6 +82,15 @@ class MarketDataProvider(ABC):
             first = result.issues.iloc[0]
             raise ValueError(f"Provider data failed validation: {first['detail']}")
         return result.accepted
+
+    def normalize_provider_metadata(self, raw: pd.DataFrame, symbol: str) -> pd.DataFrame:
+        """Return provider-specific row metadata separately from canonical OHLCV."""
+        return pd.DataFrame(columns=["trade_date", "metadata_json"])
+
+    def fetch_adjustment_factors(
+        self, symbol: str, start: date | None = None, end: date | None = None,
+    ) -> pd.DataFrame:
+        raise NotImplementedError(f"{self.name} does not provide adjustment factors.")
 
     @property
     @abstractmethod

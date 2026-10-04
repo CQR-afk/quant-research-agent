@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import os
 import uuid
 from datetime import date
@@ -46,6 +47,11 @@ class MarketDataStore:
         connection.execute("CREATE TABLE IF NOT EXISTS validation_issues (ingest_id VARCHAR, symbol VARCHAR, row_index INTEGER, issue_type VARCHAR, detail VARCHAR)")
         connection.execute("CREATE TABLE IF NOT EXISTS parquet_manifest (partition_key VARCHAR PRIMARY KEY, file_path VARCHAR, row_count BIGINT, updated_at TIMESTAMPTZ)")
         connection.execute("CREATE TABLE IF NOT EXISTS bar_revisions (revision_id VARCHAR, market VARCHAR, exchange VARCHAR, symbol VARCHAR, trade_date DATE, source VARCHAR, adjustment VARCHAR, record_version INTEGER, row_json VARCHAR, recorded_at TIMESTAMPTZ)")
+        connection.execute("CREATE TABLE IF NOT EXISTS provider_bar_metadata (provider VARCHAR, symbol VARCHAR, trade_date DATE, provider_version VARCHAR, source_interface VARCHAR, metadata_json VARCHAR, downloaded_at TIMESTAMPTZ, ingest_id VARCHAR, PRIMARY KEY (provider, symbol, trade_date))")
+        connection.execute("CREATE TABLE IF NOT EXISTS adjustment_factors (market VARCHAR, exchange VARCHAR, symbol VARCHAR, trade_date DATE, provider VARCHAR, adjustment_factor DOUBLE, downloaded_at TIMESTAMPTZ, first_seen_at TIMESTAMPTZ, recorded_at TIMESTAMPTZ, ingest_id VARCHAR, provider_version VARCHAR, record_version INTEGER, revision_id VARCHAR, PRIMARY KEY (market, exchange, symbol, trade_date, provider))")
+        connection.execute("CREATE TABLE IF NOT EXISTS adjustment_factor_revisions (revision_id VARCHAR, market VARCHAR, exchange VARCHAR, symbol VARCHAR, trade_date DATE, provider VARCHAR, record_version INTEGER, row_json VARCHAR, recorded_at TIMESTAMPTZ)")
+        connection.execute("CREATE TABLE IF NOT EXISTS backfill_jobs (job_id VARCHAR PRIMARY KEY, job_key VARCHAR UNIQUE, universe_path VARCHAR, requested_start DATE, requested_end DATE, adjustment VARCHAR, provider VARCHAR, created_at TIMESTAMPTZ, updated_at TIMESTAMPTZ)")
+        connection.execute("CREATE TABLE IF NOT EXISTS backfill_items (job_id VARCHAR, symbol VARCHAR, status VARCHAR, provider VARCHAR, started_at TIMESTAMPTZ, completed_at TIMESTAMPTZ, row_count INTEGER, error VARCHAR, PRIMARY KEY (job_id, symbol))")
         return connection
 
     def _init_db(self) -> None:
@@ -99,7 +105,7 @@ class MarketDataStore:
             row = con.execute("SELECT max(trade_date) FROM market_bars WHERE symbol=? AND source=? AND adjustment=?", [symbol, source, adjustment]).fetchone()
         return row[0]
 
-    def merge_validated(self, bars: pd.DataFrame) -> int:
+    def merge_validated(self, bars: pd.DataFrame, provider_metadata: pd.DataFrame | None = None) -> int:
         """Idempotent upsert; write new Parquet snapshots before switching the catalog."""
         if bars.empty:
             return 0
@@ -126,7 +132,29 @@ class MarketDataStore:
                     revision_ids[(record["symbol"], record["trade_date"])] = rid
                     con.execute("INSERT INTO bar_revisions VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, current_timestamp)", [rid, record["market"], record["exchange"], record["symbol"], record["trade_date"], record["source"], record["adjustment"], int(record["old_version"]), prior.to_json(orient="records", date_format="iso")])
             update_frame = pd.concat([new_rows, changed.loc[:, frame.columns]], ignore_index=True)
+            def persist_provider_metadata() -> None:
+                if provider_metadata is None or provider_metadata.empty:
+                    return
+                metadata = provider_metadata.loc[:, [
+                    "provider", "symbol", "trade_date", "provider_version", "source_interface",
+                    "metadata_json", "downloaded_at", "ingest_id",
+                ]].copy()
+                metadata["trade_date"] = pd.to_datetime(metadata["trade_date"]).dt.date
+                con.register("provider_meta_rows", metadata)
+                con.execute("""
+                    INSERT INTO provider_bar_metadata
+                    SELECT provider, symbol, trade_date, provider_version, source_interface,
+                           metadata_json, downloaded_at, ingest_id
+                    FROM provider_meta_rows
+                    ON CONFLICT (provider, symbol, trade_date) DO UPDATE SET
+                        provider_version=excluded.provider_version,
+                        source_interface=excluded.source_interface,
+                        metadata_json=excluded.metadata_json,
+                        downloaded_at=excluded.downloaded_at,
+                        ingest_id=excluded.ingest_id
+                """)
             if update_frame.empty:
+                persist_provider_metadata()
                 con.execute("COMMIT")
                 return 0
             update_frame["record_version"] = 1
@@ -164,6 +192,7 @@ class MarketDataStore:
                 con.execute("INSERT INTO parquet_manifest VALUES (?, ?, ?, current_timestamp) ON CONFLICT (partition_key) DO UPDATE SET file_path=excluded.file_path, row_count=excluded.row_count, updated_at=excluded.updated_at", [key, str(target.resolve()), len(snapshot)])
             con.register("upserts", update_frame.drop(columns="_year", errors="ignore"))
             con.execute("INSERT INTO market_bars SELECT * FROM upserts ON CONFLICT (market, exchange, symbol, trade_date, source, adjustment) DO UPDATE SET open=excluded.open, high=excluded.high, low=excluded.low, close=excluded.close, volume=excluded.volume, amount=excluded.amount, downloaded_at=excluded.downloaded_at, provider_version=excluded.provider_version, source_interface=excluded.source_interface, ingest_id=excluded.ingest_id, revision_id=excluded.revision_id, record_version=excluded.record_version, first_seen_at=excluded.first_seen_at, recorded_at=excluded.recorded_at, row_hash=excluded.row_hash")
+            persist_provider_metadata()
             con.execute("COMMIT")
             return len(update_frame)
         except Exception:
@@ -201,4 +230,153 @@ class MarketDataStore:
             args.append(ingest_id)
         with self._connect() as con:
             return con.execute(sql, args).df()
+
+    def merge_adjustment_factors(self, factors: pd.DataFrame) -> int:
+        """Upsert a separately versioned adjustment-factor series, never OHLC rows."""
+        required = {
+            "market", "exchange", "symbol", "trade_date", "provider", "adjustment_factor",
+            "downloaded_at", "first_seen_at", "recorded_at", "ingest_id", "provider_version",
+        }
+        missing = required.difference(factors.columns)
+        if missing:
+            raise ValueError(f"Adjustment factors missing fields: {', '.join(sorted(missing))}.")
+        if factors.empty:
+            return 0
+        frame = factors.loc[:, sorted(required)].copy()
+        frame["trade_date"] = pd.to_datetime(frame["trade_date"]).dt.date
+        frame["adjustment_factor"] = pd.to_numeric(frame["adjustment_factor"], errors="coerce")
+        if (frame["adjustment_factor"].isna().any()
+                or not all(math.isfinite(value) for value in frame["adjustment_factor"].to_numpy(dtype=float))
+                or (frame["adjustment_factor"] <= 0).any()):
+            raise ValueError("Adjustment factors must be finite and positive.")
+        if frame.duplicated(["market", "exchange", "symbol", "trade_date", "provider"]).any():
+            raise ValueError("Duplicate adjustment factor keys are not allowed.")
+        con = self._connect()
+        try:
+            con.execute("BEGIN TRANSACTION")
+            con.register("incoming_factors", frame)
+            existing = con.execute("""
+                SELECT i.*, f.adjustment_factor old_factor, f.record_version old_version,
+                       f.first_seen_at old_first_seen
+                FROM incoming_factors i JOIN adjustment_factors f
+                USING (market, exchange, symbol, trade_date, provider)
+            """).df()
+            changed = existing.loc[existing["adjustment_factor"] != existing["old_factor"]]
+            revision_by_key: dict[tuple[str, object, str], tuple[str, int, object]] = {}
+            for row in changed.to_dict("records"):
+                key = (row["symbol"], pd.Timestamp(row["trade_date"]).date(), row["provider"])
+                revision_id = str(uuid.uuid4())
+                revision_by_key[key] = (revision_id, int(row["old_version"]) + 1, row["old_first_seen"])
+                con.execute("INSERT INTO adjustment_factor_revisions VALUES (?, ?, ?, ?, ?, ?, ?, ?, current_timestamp)", [
+                    revision_id, row["market"], row["exchange"], row["symbol"], row["trade_date"],
+                    row["provider"], int(row["old_version"]), json.dumps({
+                        "adjustment_factor": float(row["old_factor"]),
+                        "record_version": int(row["old_version"]),
+                    }),
+                ])
+            changed_keys = set(revision_by_key)
+            known_keys = {(row.symbol, pd.Timestamp(row.trade_date).date(), row.provider) for row in existing.itertuples()}
+            rows: list[dict[str, object]] = []
+            for row in frame.to_dict("records"):
+                key = (row["symbol"], row["trade_date"], row["provider"])
+                if key in known_keys and key not in changed_keys:
+                    continue
+                row["record_version"] = 1
+                row["revision_id"] = None
+                if key in revision_by_key:
+                    rid, version_number, first_seen = revision_by_key[key]
+                    row["record_version"], row["revision_id"], row["first_seen_at"] = version_number, rid, first_seen
+                rows.append(row)
+            if rows:
+                updates = pd.DataFrame(rows, columns=[*sorted(required), "record_version", "revision_id"])
+                con.register("factor_upserts", updates)
+                con.execute("""
+                    INSERT INTO adjustment_factors
+                    SELECT market, exchange, symbol, trade_date, provider, adjustment_factor,
+                           downloaded_at, first_seen_at, recorded_at, ingest_id, provider_version,
+                           record_version, revision_id
+                    FROM factor_upserts
+                    ON CONFLICT (market, exchange, symbol, trade_date, provider) DO UPDATE SET
+                        adjustment_factor=excluded.adjustment_factor,
+                        downloaded_at=excluded.downloaded_at,
+                        recorded_at=excluded.recorded_at,
+                        ingest_id=excluded.ingest_id,
+                        provider_version=excluded.provider_version,
+                        record_version=excluded.record_version,
+                        revision_id=excluded.revision_id
+                """)
+            con.execute("COMMIT")
+            return len(rows)
+        except Exception:
+            try:
+                con.execute("ROLLBACK")
+            except Exception:
+                pass
+            raise
+        finally:
+            con.close()
+
+    def query_adjustment_factors(
+        self, *, symbol: str, start: date | None = None, end: date | None = None,
+        provider: str | None = None,
+    ) -> pd.DataFrame:
+        clauses, params = ["symbol=?"], [symbol]
+        for col, val in (("trade_date >=", start), ("trade_date <=", end), ("provider", provider)):
+            if val is not None:
+                clauses.append(f"{col} ?" if col.startswith("trade_date") else f"{col}=?")
+                params.append(val)
+        with self._connect() as con:
+            return con.execute("SELECT * FROM adjustment_factors WHERE " + " AND ".join(clauses) +
+                               " ORDER BY trade_date, provider", params).df()
+
+    def get_or_create_backfill_job(
+        self, *, job_key: str, universe_path: str, start: date, end: date,
+        adjustment: str, provider: str, symbols: list[str],
+    ) -> str:
+        with self._connect() as con:
+            found = con.execute("SELECT job_id FROM backfill_jobs WHERE job_key=?", [job_key]).fetchone()
+            if found:
+                job_id = found[0]
+            else:
+                job_id = str(uuid.uuid4())
+                con.execute("INSERT INTO backfill_jobs VALUES (?, ?, ?, ?, ?, ?, ?, current_timestamp, current_timestamp)",
+                            [job_id, job_key, universe_path, start, end, adjustment, provider])
+            for symbol in symbols:
+                con.execute("INSERT INTO backfill_items VALUES (?, ?, 'pending', ?, NULL, NULL, 0, NULL) ON CONFLICT (job_id, symbol) DO NOTHING",
+                            [job_id, symbol, provider])
+            con.execute("UPDATE backfill_jobs SET updated_at=current_timestamp WHERE job_id=?", [job_id])
+        return job_id
+
+    def backfill_items(self, job_id: str) -> pd.DataFrame:
+        with self._connect() as con:
+            return con.execute("SELECT * FROM backfill_items WHERE job_id=? ORDER BY symbol", [job_id]).df()
+
+    def set_backfill_item(
+        self, job_id: str, symbol: str, *, status: str, provider: str,
+        row_count: int = 0, error: str | None = None, started: bool = False,
+    ) -> None:
+        if status not in {"pending", "running", "completed", "failed"}:
+            raise ValueError("Invalid backfill item status.")
+        with self._connect() as con:
+            con.execute("""
+                UPDATE backfill_items SET status=?, provider=?,
+                    started_at=CASE WHEN ? THEN current_timestamp ELSE started_at END,
+                    completed_at=CASE WHEN ? IN ('completed','failed') THEN current_timestamp ELSE NULL END,
+                    row_count=?, error=?
+                WHERE job_id=? AND symbol=?
+            """, [status, provider, started, status, row_count, error, job_id, symbol])
+            con.execute("UPDATE backfill_jobs SET updated_at=current_timestamp WHERE job_id=?", [job_id])
+
+    def backfill_jobs_status(self) -> pd.DataFrame:
+        with self._connect() as con:
+            return con.execute("""
+                SELECT j.job_id, j.universe_path, j.requested_start, j.requested_end,
+                       j.adjustment, j.provider, j.created_at, j.updated_at,
+                       count(i.symbol) item_count,
+                       count(*) FILTER (WHERE i.status='completed') completed,
+                       count(*) FILTER (WHERE i.status='failed') failed,
+                       count(*) FILTER (WHERE i.status IN ('pending','running')) pending
+                FROM backfill_jobs j LEFT JOIN backfill_items i USING (job_id)
+                GROUP BY ALL ORDER BY j.created_at DESC
+            """).df()
 

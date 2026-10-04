@@ -175,3 +175,27 @@ Step 3 基线提交：`1c44c7c chore: checkpoint step 3 A-share data pipeline`�
 尚未完成：港股 Provider、历史成分股/退市股票池、可靠停复牌资料、Point-in-Time 公司行动还原、walk-forward 验证、参数选择研究、真实数据 LightGBM 训练、VectorBT 策略回测、GPT 新闻增强、本地 Qwen/Hermes Agent、Streamlit Dashboard、券商连接和自动下单。
 
 该项目目前是量化研究基础设施与模型实验原型，不是已验证的投资策略或收益系统。
+
+## Step 4.1 最新状态（2026-10-04）
+
+### 多 Provider 数据基础
+
+在保留 AKShare 与 Yahoo Finance Provider 的基础上，新增 Tushare Pro、BaoStock、Provider capabilities、配置路由、行情来源对账、adjusted view、独立复权因子和可恢复历史回填。`quantlab data providers` 显示 Tushare 缺少 token、BaoStock/AKShare/Yahoo SDK 可用。每一批研究行情都明确保留 provider、provider 版本、接口、复权方式、下载时间和 ingest/version lineage。自动下载和研究数据集均禁止隐式混合来源。
+
+canonical 基础价格使用供应商不复权行情（`adjustment=none`）；qfq/hfq 为供应商调整快照，记录其来源和快照时间。已有 AKShare qfq 数据仍单独留存。Tushare 因没有 token 未被真实调用；复权因子表目前空。BaoStock none/qfq/hfq 适配代码已实现，但 qfq/hfq 的线上请求尚未测试。
+
+### 实际行情和回填
+
+BaoStock 2024Q1 短区间测试三只标的均成功，每只 58 行，2024-01-02 至 2024-03-29，接受 58、拒绝 0。2018–2025 的 12 股池分四批请求后 11 股成功、共 21,257 条不复权记录：10 股各 1,942 行，300750.SZ 1,837 行（从 2018-06-11 开始）。688981.SH 的 BaoStock 返回 1,327 条 raw，但 2025-09-01 至 09-08 六条记录缺 volume/amount，已归档并拒绝写入研究库；状态为失败。停牌与上市覆盖未知，未自行推断。
+
+AKShare/BaoStock 实际对账在 AKShare 端因本机代理 `127.0.0.1:9` 拒绝连接而受阻，BaoStock 返回 58 行，未产生有效的交叉源数值比较。失败报告位于 `artifacts/reports/reconcile_0bccf96f2f464d029d0db361637e20f1.json`。Step 3 的 116 条 AKShare/qfq 快照仍保留。
+
+### 研究数据与模型门禁
+
+新建独立数据集 `data/processed/ashare_research_dataset_none_v1.parquet`：21,257 行、21,202 个五观察期标签、20,598 个完整特征样本、11 股。Data Readiness Gate PASS：Train 12,491、Validation 2,552、Test 5,280、测试 480 个日期、横截面覆盖 100%；purge 和 embargo 通过。这个门禁评估数据充分性及时间顺序，并非策略有效性或预测能力证明。没有正式训练 LightGBM。
+
+### 当前环境与工程质量
+
+继续使用原 Python 3.14.6 `.venv`。关键版本：NumPy 2.5.3、Pandas 3.0.6、scikit-learn 1.9.1、LightGBM 4.7.0、DuckDB 1.5.6、PyArrow 25.0.1、AKShare 1.19.1、BaoStock 0.9.4、Tushare 1.4.29、exchange-calendars 4.13.2。`uv pip check` 107 个包全部兼容。Step 4.1 在 Step 4 本地检查点 `e82f4c2` 上增量修改；没有 remote、push 或 Step 4.1 commit。`.env`、数据与模型产物均不跟踪。
+
+完整离线测试在 Step 4 原有 45 项上新增 16 项；最终结果 61 项通过、0 失败。`docs/development_log.md` 记录每个实测命令和回填股票明细，`docs/engineering_audit.md` 记录 Provider 设计与限制。仍待解决 AKShare 代理、688981.SH 数据质量、Tushare 凭据/权限、调整口径的实测和 point-in-time 公司行动数据。Step 4.1 完成并暂停。

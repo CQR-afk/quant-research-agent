@@ -196,3 +196,50 @@ docs/
 本阶段没有接入港股源、正式交易日历/停牌资料、全市场采集、point-in-time 公司行动数据库、LightGBM 正式训练、VectorBT 回测、Dashboard、本地 Agent 或券商。复权历史仍可能由 AKShare 上游修订；当前保存采集和版本元数据，但不还原历史时点可见的公司行动。
 
 依赖一致性额外检查：`uv pip check --python .\.venv\Scripts\python.exe` 检查 98 个安装包，全部兼容。
+
+## Step 4.1 多数据源实现审计（2026-10-04）
+
+### 代码与环境实际状态
+
+当前工作区在 Step 4 检查点 `e82f4c2 chore: checkpoint step 4 research dataset and lightgbm pipeline` 之上包含 Step 4.1 增量修改；无 Git remote、无 push。项目仍使用 `.venv` Python 3.14.6。项目环境导入实际版本：NumPy 2.5.3、Pandas 3.0.6、scikit-learn 1.9.1、LightGBM 4.7.0、DuckDB 1.5.6、PyArrow 25.0.1、AKShare 1.19.1、BaoStock 0.9.4、Tushare 1.4.29、exchange-calendars 4.13.2。Tushare 与 BaoStock SDK 已安装；没有更换系统 Python。`uv pip check` 检查 107 个已安装包、全部兼容，`compileall` 通过。
+
+`.env` 仍在 `.gitignore`，没有被 Git 跟踪。密钥检查不输出值，只汇报是否匹配。Tushare 环境当前没有配置 token；CLI 返回 `unavailable: missing credential`。没有执行 Tushare 行情或 `adj_factor` 云端请求，因此权限状态未知。OpenAI 仍未真实调用。
+
+### Provider 实现和口径
+
+| Provider | 当前实现 | SDK/凭据 | 支持市场/复权 | Step 4.1 真实请求 |
+|---|---|---|---|---|
+| Tushare Pro | 日线标准化、独立复权因子表、权限异常脱敏 | SDK 1.4.29；需要 `TUSHARE_TOKEN`，本机未配置 | CN_A / none；独立 factor 接口 | 未尝试，缺 token |
+| BaoStock | 日线、raw/validated、元数据、none/qfq/hfq | SDK 0.9.4；无需 token | CN_A / none、qfq、hfq | 成功，短区间和历史回填 |
+| AKShare | 原有 Provider 保留 | SDK 1.19.1；无 token | CN_A / none、qfq、hfq | 短对账失败，代理连接被拒 |
+| Yahoo Finance | 原兼容 Provider 保留 | yfinance 1.7.0；无 token | US、CN_A、HK / none、vendor_adjusted | 本阶段未联网请求；原有 SPY/Mock 接口保留 |
+
+BaoStock 日线 volume 使用股、amount 使用人民币元；返回 `adjustflag` 与请求复权模式校验，`tradestatus`/`isST` 以 provider metadata 单独保存。Tushare `daily.vol` 是手、`amount` 是千元，标准化转换为股/元；`adj_factor` 不覆盖 base OHLC。此处单位与 endpoint 能力依据 [Tushare daily 接口](https://tushare.pro/document/1?doc_id=27)、[Tushare 复权因子接口](https://tushare.pro/document/2?doc_id=28) 和 [BaoStock SDK 文档](https://pypi.org/project/baostock/)；适配器实现映射通过离线 Fixture 验证。AKShare/HFQ/QFQ 历史仍是可修订的 provider snapshot，不构成 point-in-time safe 序列。
+
+### 新增接口和存储
+
+- `ProviderCapabilities` 将日线、原始价格、市场、复权类型、复权因子、交易日历、停牌状态、股票元数据和凭据需求作为显式能力。`config/data_sources.json` 配置下载和历史回填顺序/请求间隔/每批数量。
+- `download_market_data_routed` 与 `update_market_data_routed` 对一个证券的完整日期范围先选单一 Provider；失败留有 ingest 结果后，自动路由可以尝试下一个来源。已保存记录的 key 仍包含 `source` 和 `adjustment`。
+- 新增 `provider_bar_metadata`、`adjustment_factors`、`adjustment_factor_revisions`、`backfill_jobs`、`backfill_items`。因子修订留版本；raw bar 不随因子变化。Backfill job 固定 provider 和请求口径，已完成证券跳过，失败可单独重试。
+- `build_adjusted_price_view` 返回来源、价格基础、调整方式、调整快照时间；不把供应商复权快照冒称 PIT。查询/研究若遇多个 provider 必须显式选择。对账报告只用于观察差异，不会修改正式库。
+- 正常化遇到坏 OHLC/成交量/成交额时，先保留 raw，再让 validation 记录问题并阻止异常记录进入正式表；不补成交量或成交额。停牌未知仍是 `Unknown`。688981.SH 的缺字段属于真实上游数据质量问题。
+- `.gitignore` 排除 `.env`、虚拟环境、数据库、行情 Parquet、artifacts、日志和模型文件。Step 4.1 未提交，也没有上传数据。
+
+### OFFLINE TEST RESULT
+
+完整 `python -m unittest discover -s tests -v` 在 Step 4 基线 45 项后新增 16 项 provider/data tests；本阶段最终全量执行结果为 61 passed / 0 failed。新增离线用例覆盖 Tushare 日线单位/无凭据/权限错误脱敏/因子修订、BaoStock 代码和复权字段、来源隔离、auto fallback、adjusted view、真实对账报告结构（由 mock）、回填恢复和失败重试、坏行 raw 归档与拒绝。Provider/gpt 联网不是 unittest 前置条件。
+
+### REAL PROVIDER RESULT
+
+- BaoStock 2024Q1：`000001.SZ`、`600519.SH`、`300750.SZ` 各 58 行，交易日 2024-01-02 至 2024-03-29，各 58 行校验接受、0 行拒绝。
+- BaoStock 2018–2025 不复权回填：11/12 成功，完成行数合计 21,257。除 300750.SZ 从 2018-06-11 开始（1,837 行）外，其他 10 只成功标的各有 1,942 行，范围 2018-01-02 至 2025-12-31。688981.SH 请求返回 1,327 条 raw；6 个日期（2025-09-01、09-02、09-03、09-04、09-05、09-08）成交量与成交额为空，标准化后分别出现缺字段问题，正式研究库接收 0 行。未猜测该证券的上市时间或停牌状态。
+- AKShare/BaoStock 000001.SZ 短区间/none 对账：BaoStock 得到 58 行；AKShare 3 次请求被配置中的本机代理地址 `127.0.0.1:9` 拒绝，报告状态 blocked，见 `artifacts/reports/reconcile_0bccf96f2f464d029d0db361637e20f1.json`。结果无匹配统计，不声称两个 Provider 数值一致。
+- 复权层：既有 AKShare qfq 116 行保留，与 BaoStock none 行隔离；BaoStock qfq/hfq 代码路径通过离线映射测试，但没有在本阶段单独真实下载这两种口径。Tushare adjustment factor 0 行，因为无凭据且无请求。
+
+### 数据集和 Gate
+
+以明确参数构建 `data/processed/ashare_research_dataset_none_v1.parquet`，未覆盖原 Step 4 qfq 数据集。实际得到 21,257 行、21,202 个五期标签、20,598 个完整特征行；池内 11 只标的有数据。独立 `quantlab research readiness` 结果为 PASS：Train 12,491、Validation 2,552、Test 5,280、测试期 480 日期、横截面覆盖 100%，边界 purge/5-session embargo 均通过。报告：`artifacts/reports/readiness_20261004T114455Z_c61aea87.json`。本阶段没有拟合真实 LightGBM，因此没有真实模型指标。
+
+### 已知限制
+
+尚未完成事项：Tushare 凭据/权限验证、有效 Tushare factor snapshot、AKShare 连接恢复和实际双源数值比较、688981.SH 缺失数据问题、BaoStock qfq/hfq 线上验证、港股 Provider、历史股票池/退市样本、point-in-time 公司行动还原、VectorBT、Dashboard、Qwen/Hermes、券商交易。Readiness PASS 是数据可用性门槛，不是策略收益或模型有效性结论。Step 4.1 已按用户要求暂停，不自动进入模型实验。
