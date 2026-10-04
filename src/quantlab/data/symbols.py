@@ -26,6 +26,8 @@ _EXCHANGE_BY_PREFIX = {
     "003": "SZSE",
     "300": "SZSE",
     "301": "SZSE",
+    # The live SZSE A-share security master now contains the 302 range.
+    "302": "SZSE",
 }
 
 

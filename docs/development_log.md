@@ -344,3 +344,7 @@ Target diagnostics：Pool Excess 在 1,452 个可用预测日上的 maximum abso
 - Baseline v1 负 Legacy Test、Step4.3 v2 negative Rank IC、qfq non-PIT 和 11 股工程池 survivorship bias 都继续保留。未扩 Universe、未看 2024/2025 或 2026+、未回测、未调参、未换模型、未进入 AI layer。
 
 Step 4.4 达到停止条件，到此暂停。
+
+## Step 4.5R.2（2026-10-05）
+
+在用户授权的项目级范围内，通过独立 `trust_env=False` 会话获取 SSE 主板、科创板和 SZSE A 股公开清单，验证行数分别为 1,702、618、2,904，写入原始文件、来源元数据和 SHA-256，并生成 5,224 条标准化 Security Master。扩展 SZSE `302` 代码段映射后，三源均无重复证券代码。按固定 seed、交易所/行业分层哈希和原 U11 锚点规则冻结 U50/U100；完整 3,225 个 eligible candidate 排序已保留以支持后续 deterministic replacement。BaoStock 0.9.4 `query_stock_basic(code=...)` 为 U100 的 100 只股票各返回一条记录，IPO 日期与交易所名单 100/100 一致；它不参与选股，行业仍采用交易所来源。选股不使用收益/模型字段，current snapshot 的幸存者偏差仍 unresolved。新增 8 项离线测试，全套 100 项通过，`compileall` 通过；将 uv 缓存指向项目内 `.uv-cache` 后，107 个依赖全部兼容。没有行情回填、Legacy Test/Holdout 访问或模型运行。

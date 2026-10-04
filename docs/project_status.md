@@ -157,3 +157,7 @@ Step 4.4 检查点 `c4ca573 chore: checkpoint step 4.4 cross-sectional target st
 ### Step 4.5R.1 更新
 
 起始 HEAD `0c63cef` 且工作区干净；`c4ca573` 与 `046e682` 检查点存在。代理环境仍指向无响应的 loopback:9。本次没有明确直连授权，因此未发起 SSE 主板、SSE 科创板或 SZSE 的在线列表请求。静态检查发现 BaoStock 每页最多 2,000 条，`ResultData.next()` 在满页后会请求下一页；它与初始响应都使用无超时的阻塞 socket 接收循环。现有看门狗没有逐页进度日志，无法判断卡在首个响应还是后续分页。92 项测试通过，107 个依赖兼容。结果保持 `metadata_access_still_blocked`；详见执行报告 Step 4.5R.1。
+
+### Step 4.5R.2 更新（2026-10-05）
+
+后续用户已授权仅对 SSE/SZSE 公开证券列表项目级直连。独立会话成功获取 SSE 主板 1,702、科创板 618、SZSE A 股 2,904 条，已建立 5,224 条去重 Security Master；U50/U100 按固定 seed 冻结且保持 25/25、50/50 的交易所分布。新增 8 项离线测试后，全套 100 项通过，`compileall` 通过。正式哈希、来源文件 SHA-256、选股规则和 rejection ledger 见 [`step_4_5_universe_expansion.md`](step_4_5_universe_expansion.md)。当前来源仅为 2026 年交易所快照，不能消除历史幸存者偏差。没有下载新行情或运行模型。Step 4.5R.2 已达到 `metadata_source_ready` 并停止。
