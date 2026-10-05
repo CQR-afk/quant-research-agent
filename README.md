@@ -127,3 +127,7 @@ Step 4.4 沿用 Feature v1、固定 LightGBM 参数及 2018–2023 三个 expand
 Step 4.4 本地检查点为 `c4ca573 chore: checkpoint step 4.4 cross-sectional target study`。Step 4.5 已检查本地数据 Provider，但候选元数据请求受网络代理错误阻断：BaoStock 登录成功后全量基本资料/行业查询未返回记录，AKShare 交易所股票列表返回 `ProxyError`。因此没有冻结 U50/U100、下载任何新行情或运行新增模型实验；U11 control 保持原样。详细执行证据与恢复条件见 [`docs/step_4_5_universe_expansion.md`](docs/step_4_5_universe_expansion.md)。当前不能对 breadth 支持性作研究结论。
 
 Step 4.5R 已定位到 Python 的 HTTP/HTTPS/ALL 代理指向无响应的本地端口 9；DNS 正常。BaoStock 0.9.4 的单股基础资料与日期行业查询可成功返回字段，但全量查询在 60 秒/15 秒进程看门狗下超时。AKShare 1.19.1 的两个交易所列表函数经当前代理均为 `ProxyError`。没有使用直连获取清单，也没有本地带官方来源的 CSV/XLS/XLSX 文件可导入。结论仍为 **`metadata_access_still_blocked`**，未冻结候选池；完整逐接口测试结果及恢复条件见同一报告。
+
+## Step 4.5A — Frozen U50 开发期数据状态
+
+Step 4.5A 已完成并通过 U50 data breadth gate（`u50_data_ready`）。冻结 U50 hash 为 `d6dbbb64fb44564efc37304889812b35bcb5ee0b532210722dcd2096a7ae9218`；现有 11 个 anchors 复用本地数据，新增 39 只从 BaoStock 分别获取 none 与 qfq，日期范围严格为 2018-01-01 至 2023-12-31。生成独立数据集 `data/processed/ashare_research_u50_qfq_v1_dev_2018_2023.parquet`，使用 `ashare_daily_v1` 与 `target_5d_h5_v1`，无模型训练。qfq 是供应商调整快照，不是 point-in-time；Security Master 的当前名单仍有幸存者偏差。逐股复权口径、快照时间、数据缺口和宽度指标见 [`docs/step_4_5A_u50_data_validation.md`](docs/step_4_5A_u50_data_validation.md)。

@@ -262,6 +262,58 @@ class MultiProviderTests(unittest.TestCase):
         self.assertEqual(len(store.query()), 0)
         self.assertEqual(len(list((self.temp / "db" / "raw").rglob("*.parquet"))), 1)
 
+    def test_provider_reported_nontrading_rows_are_archived_but_not_used_as_bars(self):
+        class WithNonTradingRow(FakeProvider):
+            def fetch_raw_daily_bars(self, symbol, start=None, end=None, *, adjustment="none"):
+                return pd.DataFrame({
+                    "trade_date": ["2024-01-02", "2024-01-03"],
+                    "open": [10.0, 10.0], "high": [10.5, 10.0],
+                    "low": [9.8, 10.0], "close": [10.2, 10.0],
+                    "volume": ["10000", ""], "amount": ["100000", ""],
+                    "tradestatus": ["1", "0"],
+                })
+
+            def normalize_provider_metadata(self, raw, symbol):
+                return pd.DataFrame({
+                    "trade_date": pd.to_datetime(raw["trade_date"]).dt.date,
+                    "metadata_json": [json.dumps({"tradestatus": value}) for value in raw["tradestatus"]],
+                })
+
+        store = MarketDataStore(self.temp / "nontrading-db")
+        provider = WithNonTradingRow()
+        result = download_market_data("000001.SZ", start=date(2024, 1, 2), end=date(2024, 1, 3),
+                                      adjustment="none", provider=provider, store=store)
+        self.assertEqual(result["status"], "success")
+        self.assertEqual(result["accepted_rows"], 1)
+        self.assertEqual(result["excluded_nontrading_rows"], 1)
+        self.assertEqual(store.query().trade_date.astype(str).tolist(), ["2024-01-02"])
+        self.assertIn("provider_reported_nontrading", store.validation_issues("000001.SZ").issue_type.tolist())
+        self.assertEqual(len(store.query_provider_metadata(provider="fake", symbol="000001.SZ")), 2)
+        raw = pd.read_parquet(next((self.temp / "nontrading-db" / "raw").rglob("*.parquet")))
+        self.assertEqual(len(raw), 2)
+        repeated = download_market_data("000001.SZ", start=date(2024, 1, 2), end=date(2024, 1, 3),
+                                        adjustment="none", provider=provider, store=store)
+        self.assertEqual(repeated["status"], "skipped")
+
+    def test_other_adjustment_metadata_cannot_certify_requested_partition(self):
+        store = MarketDataStore(self.temp / "adjustment-metadata-db")
+        raw = pd.DataFrame({"trade_date": ["2024-01-02"], "open": [10], "high": [10.5],
+            "low": [9.8], "close": [10.2], "volume": [10000], "amount": [100000]})
+        from quantlab.data.schema import normalize_daily_bars
+        qfq = normalize_daily_bars(raw, market="CN_A", exchange="SZSE", symbol="000001.SZ",
+            adjustment="qfq", currency="CNY", source="fake", provider_version="1", source_interface="fixture")
+        qfq["ingest_id"] = "qfq-fixture"
+        qfq["downloaded_at"] = pd.Timestamp("2024-01-04", tz="UTC")
+        metadata = pd.DataFrame({"provider": ["fake"], "symbol": ["000001.SZ"],
+            "trade_date": [pd.Timestamp("2024-01-03").date()], "provider_version": ["1"],
+            "source_interface": ["fixture"], "metadata_json": ['{"tradestatus":"0"}'],
+            "downloaded_at": [pd.Timestamp("2024-01-04", tz="UTC")], "ingest_id": ["qfq-fixture"]})
+        store.merge_validated(qfq, metadata)
+        result = download_market_data("000001.SZ", start=date(2024, 1, 2), end=date(2024, 1, 3),
+                                      adjustment="none", provider=FakeProvider(), store=store)
+        self.assertEqual(result["status"], "success")
+        self.assertEqual(len(store.query(symbol="000001.SZ", adjustment="none", source="fake")), 2)
+
     def test_backfill_checkpoint_resumes_next_symbol_without_repeating_completed(self):
         config = self.temp / "sources.json"
         config.write_text(json.dumps({"download": {"providers": ["fake"]},
@@ -282,6 +334,21 @@ class MultiProviderTests(unittest.TestCase):
                                      router=router, store=store, limit=1)
         self.assertEqual(third["processed_this_run"], 0)
         self.assertEqual(third["status"], "complete")
+
+    def test_backfill_pilot_preserves_frozen_universe_order(self):
+        config = self.temp / "ordered-sources.json"
+        config.write_text(json.dumps({"download": {"providers": ["fake"]},
+            "historical_backfill": {"providers": ["fake"], "provider_interval_seconds": {"fake": 0}}}))
+        universe = self.temp / "ordered-universe.json"
+        universe.write_text(json.dumps({"pool_id": "ordered", "members": [
+            {"symbol": "600519.SH", "exchange": "SSE"},
+            {"symbol": "000001.SZ", "exchange": "SZSE"},
+        ]}))
+        store = MarketDataStore(self.temp / "ordered-db")
+        router = ProviderRouter(config_path=config, factories={"fake": FakeProvider}, sleeper=lambda _: None)
+        result = backfill_market_data(universe=universe, start=date(2024, 1, 2), end=date(2024, 1, 3),
+                                      router=router, store=store, limit=1)
+        self.assertEqual(result["outcomes"][0]["symbol"], "600519.SH")
 
     def test_backfill_continues_after_failure_and_retries_only_failed_symbol(self):
         class FailOnce(FakeProvider):

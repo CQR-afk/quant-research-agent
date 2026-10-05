@@ -82,9 +82,11 @@ def backfill_market_data(
         adjustment=adjustment, provider=chosen.provider.name, symbols=identities,
     )
     items = store.backfill_items(job_id)
-    pending = items.loc[items["status"].isin(["pending", "running"]), "symbol"].tolist()
-    failed = items.loc[items["status"] == "failed", "symbol"].tolist()
-    selected = failed if retry_failed_only else pending
+    # The status table is alphabetically ordered for display; execution must
+    # follow the frozen universe order so pilots and resumed batches are stable.
+    status_by_symbol = dict(zip(items["symbol"], items["status"], strict=True))
+    eligible_statuses = {"failed"} if retry_failed_only else {"pending", "running"}
+    selected = [symbol for symbol in identities if status_by_symbol.get(symbol) in eligible_statuses]
     configured_limit = int(router.config.get("historical_backfill", {}).get("batch_size", 3))
     batch_limit = limit if limit is not None else configured_limit
     selected = selected[:batch_limit]

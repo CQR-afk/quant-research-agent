@@ -161,3 +161,7 @@ Step 4.4 检查点 `c4ca573 chore: checkpoint step 4.4 cross-sectional target st
 ### Step 4.5R.2 更新（2026-10-05）
 
 后续用户已授权仅对 SSE/SZSE 公开证券列表项目级直连。独立会话成功获取 SSE 主板 1,702、科创板 618、SZSE A 股 2,904 条，已建立 5,224 条去重 Security Master；U50/U100 按固定 seed 冻结且保持 25/25、50/50 的交易所分布。新增 8 项离线测试后，全套 100 项通过，`compileall` 通过。正式哈希、来源文件 SHA-256、选股规则和 rejection ledger 见 [`step_4_5_universe_expansion.md`](step_4_5_universe_expansion.md)。当前来源仅为 2026 年交易所快照，不能消除历史幸存者偏差。没有下载新行情或运行模型。Step 4.5R.2 已达到 `metadata_source_ready` 并停止。
+
+## Step 4.5A — Frozen U50 Historical Backfill（2026-10-05）
+
+状态为 `u50_data_ready`（仅数据工程）。先在 `1edd013` 建立 Step 4.5R.2 本地检查点；冻结 U50 hash 与 U11 anchor 未变化。BaoStock 0.9.4 对 39 个新增成员分开完成 none/qfq 回填，U11 的 11 个 anchor 只读复用。完整的 `ashare_daily_v1` / `target_5d_h5_v1` development-only 数据集为 71,622 行，50/50 股票具备有效特征与标签；train/validation 为 56,072 / 11,850 行，breadth gate 通过。qfq 快照非 PIT；幸存者偏差未解决。未训练模型、未访问实际 Legacy Test 或 2026+ Holdout。逐股质量、每年覆盖、CLI、环境与范围偏差见 [`step_4_5A_u50_data_validation.md`](step_4_5A_u50_data_validation.md)。本阶段代码和报告尚未提交。

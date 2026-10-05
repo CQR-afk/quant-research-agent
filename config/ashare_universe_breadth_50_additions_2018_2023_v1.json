@@ -1,0 +1,402 @@
+{
+  "schema_version": "1.0",
+  "pool_id": "ashare_breadth_50_d6dbbb64fb44_new_members_dev_2018_2023_v1",
+  "derived_processing_scope": "U50 additions only; 11 U11 anchor members are reused from existing DuckDB records",
+  "parent_universe_path": "config/ashare_universe_breadth_50.json",
+  "parent_universe_hash": "d6dbbb64fb44564efc37304889812b35bcb5ee0b532210722dcd2096a7ae9218",
+  "research_start": "2018-01-01",
+  "research_end": "2023-12-31",
+  "market": "CN_A",
+  "members": [
+    {
+      "symbol": "603598.SH",
+      "name": "引力传媒",
+      "exchange": "SSE",
+      "industry": "租赁和商务服务业",
+      "security_type": "A_share_main_board",
+      "listing_date": "2015-05-27",
+      "eligibility_status": "listing_date_on_or_before_2017-12-31",
+      "metadata_source": "SSE public A-share list"
+    },
+    {
+      "symbol": "600661.SH",
+      "name": "昂立教育",
+      "exchange": "SSE",
+      "industry": "教育",
+      "security_type": "A_share_main_board",
+      "listing_date": "1993-06-14",
+      "eligibility_status": "listing_date_on_or_before_2017-12-31",
+      "metadata_source": "SSE public A-share list"
+    },
+    {
+      "symbol": "600969.SH",
+      "name": "郴电国际",
+      "exchange": "SSE",
+      "industry": "电力、热力、燃气及水生产和供应业",
+      "security_type": "A_share_main_board",
+      "listing_date": "2004-04-08",
+      "eligibility_status": "listing_date_on_or_before_2017-12-31",
+      "metadata_source": "SSE public A-share list"
+    },
+    {
+      "symbol": "000609.SZ",
+      "name": "*ST中迪",
+      "exchange": "SZSE",
+      "industry": "S 综合",
+      "security_type": "A_share_main_board",
+      "listing_date": "1996-10-10",
+      "eligibility_status": "listing_date_on_or_before_2017-12-31",
+      "metadata_source": "SZSE public A-share list"
+    },
+    {
+      "symbol": "603017.SH",
+      "name": "中衡设计",
+      "exchange": "SSE",
+      "industry": "科学研究和技术服务业",
+      "security_type": "A_share_main_board",
+      "listing_date": "2014-12-31",
+      "eligibility_status": "listing_date_on_or_before_2017-12-31",
+      "metadata_source": "SSE public A-share list"
+    },
+    {
+      "symbol": "000767.SZ",
+      "name": "晋控电力",
+      "exchange": "SZSE",
+      "industry": "D 水电煤气",
+      "security_type": "A_share_main_board",
+      "listing_date": "1997-06-09",
+      "eligibility_status": "listing_date_on_or_before_2017-12-31",
+      "metadata_source": "SZSE public A-share list"
+    },
+    {
+      "symbol": "600128.SH",
+      "name": "苏豪弘业",
+      "exchange": "SSE",
+      "industry": "批发和零售业",
+      "security_type": "A_share_main_board",
+      "listing_date": "1997-09-01",
+      "eligibility_status": "listing_date_on_or_before_2017-12-31",
+      "metadata_source": "SSE public A-share list"
+    },
+    {
+      "symbol": "600533.SH",
+      "name": "栖霞建设",
+      "exchange": "SSE",
+      "industry": "房地产业",
+      "security_type": "A_share_main_board",
+      "listing_date": "2002-03-28",
+      "eligibility_status": "listing_date_on_or_before_2017-12-31",
+      "metadata_source": "SSE public A-share list"
+    },
+    {
+      "symbol": "603882.SH",
+      "name": "金域医学",
+      "exchange": "SSE",
+      "industry": "卫生和社会工作",
+      "security_type": "A_share_main_board",
+      "listing_date": "2017-09-08",
+      "eligibility_status": "listing_date_on_or_before_2017-12-31",
+      "metadata_source": "SSE public A-share list"
+    },
+    {
+      "symbol": "300071.SZ",
+      "name": "福石控股",
+      "exchange": "SZSE",
+      "industry": "L 商务服务",
+      "security_type": "A_share_growth_enterprise_market",
+      "listing_date": "2010-04-21",
+      "eligibility_status": "listing_date_on_or_before_2017-12-31",
+      "metadata_source": "SZSE public A-share list"
+    },
+    {
+      "symbol": "000888.SZ",
+      "name": "峨眉山Ａ",
+      "exchange": "SZSE",
+      "industry": "N 公共环保",
+      "security_type": "A_share_main_board",
+      "listing_date": "1997-10-21",
+      "eligibility_status": "listing_date_on_or_before_2017-12-31",
+      "metadata_source": "SZSE public A-share list"
+    },
+    {
+      "symbol": "600620.SH",
+      "name": "天宸股份",
+      "exchange": "SSE",
+      "industry": "综合",
+      "security_type": "A_share_main_board",
+      "listing_date": "1992-11-17",
+      "eligibility_status": "listing_date_on_or_before_2017-12-31",
+      "metadata_source": "SSE public A-share list"
+    },
+    {
+      "symbol": "600598.SH",
+      "name": "北大荒",
+      "exchange": "SSE",
+      "industry": "农、林、牧、渔业",
+      "security_type": "A_share_main_board",
+      "listing_date": "2002-03-29",
+      "eligibility_status": "listing_date_on_or_before_2017-12-31",
+      "metadata_source": "SSE public A-share list"
+    },
+    {
+      "symbol": "000820.SZ",
+      "name": "神雾节能",
+      "exchange": "SZSE",
+      "industry": "M 科研服务",
+      "security_type": "A_share_main_board",
+      "listing_date": "1998-06-30",
+      "eligibility_status": "listing_date_on_or_before_2017-12-31",
+      "metadata_source": "SZSE public A-share list"
+    },
+    {
+      "symbol": "000428.SZ",
+      "name": "华天酒店",
+      "exchange": "SZSE",
+      "industry": "H 住宿餐饮",
+      "security_type": "A_share_main_board",
+      "listing_date": "1996-08-08",
+      "eligibility_status": "listing_date_on_or_before_2017-12-31",
+      "metadata_source": "SZSE public A-share list"
+    },
+    {
+      "symbol": "601858.SH",
+      "name": "中国科传",
+      "exchange": "SSE",
+      "industry": "文化、体育和娱乐业",
+      "security_type": "A_share_main_board",
+      "listing_date": "2017-01-18",
+      "eligibility_status": "listing_date_on_or_before_2017-12-31",
+      "metadata_source": "SSE public A-share list"
+    },
+    {
+      "symbol": "002524.SZ",
+      "name": "光正眼科",
+      "exchange": "SZSE",
+      "industry": "Q 卫生",
+      "security_type": "A_share_main_board",
+      "listing_date": "2010-12-17",
+      "eligibility_status": "listing_date_on_or_before_2017-12-31",
+      "metadata_source": "SZSE public A-share list"
+    },
+    {
+      "symbol": "600395.SH",
+      "name": "盘江股份",
+      "exchange": "SSE",
+      "industry": "采矿业",
+      "security_type": "A_share_main_board",
+      "listing_date": "2001-05-31",
+      "eligibility_status": "listing_date_on_or_before_2017-12-31",
+      "metadata_source": "SSE public A-share list"
+    },
+    {
+      "symbol": "002822.SZ",
+      "name": "ST中装",
+      "exchange": "SZSE",
+      "industry": "E 建筑业",
+      "security_type": "A_share_main_board",
+      "listing_date": "2016-11-29",
+      "eligibility_status": "listing_date_on_or_before_2017-12-31",
+      "metadata_source": "SZSE public A-share list"
+    },
+    {
+      "symbol": "002465.SZ",
+      "name": "海格通信",
+      "exchange": "SZSE",
+      "industry": "C 制造业",
+      "security_type": "A_share_main_board",
+      "listing_date": "2010-08-31",
+      "eligibility_status": "listing_date_on_or_before_2017-12-31",
+      "metadata_source": "SZSE public A-share list"
+    },
+    {
+      "symbol": "600507.SH",
+      "name": "方大特钢",
+      "exchange": "SSE",
+      "industry": "制造业",
+      "security_type": "A_share_main_board",
+      "listing_date": "2003-09-30",
+      "eligibility_status": "listing_date_on_or_before_2017-12-31",
+      "metadata_source": "SSE public A-share list"
+    },
+    {
+      "symbol": "600054.SH",
+      "name": "黄山旅游",
+      "exchange": "SSE",
+      "industry": "水利、环境和公共设施管理业",
+      "security_type": "A_share_main_board",
+      "listing_date": "1997-05-06",
+      "eligibility_status": "listing_date_on_or_before_2017-12-31",
+      "metadata_source": "SSE public A-share list"
+    },
+    {
+      "symbol": "000923.SZ",
+      "name": "河钢资源",
+      "exchange": "SZSE",
+      "industry": "B 采矿业",
+      "security_type": "A_share_main_board",
+      "listing_date": "1999-07-14",
+      "eligibility_status": "listing_date_on_or_before_2017-12-31",
+      "metadata_source": "SZSE public A-share list"
+    },
+    {
+      "symbol": "601228.SH",
+      "name": "广州港",
+      "exchange": "SSE",
+      "industry": "交通运输、仓储和邮政业",
+      "security_type": "A_share_main_board",
+      "listing_date": "2017-03-29",
+      "eligibility_status": "listing_date_on_or_before_2017-12-31",
+      "metadata_source": "SSE public A-share list"
+    },
+    {
+      "symbol": "000029.SZ",
+      "name": "深深房Ａ",
+      "exchange": "SZSE",
+      "industry": "K 房地产",
+      "security_type": "A_share_main_board",
+      "listing_date": "1993-09-15",
+      "eligibility_status": "listing_date_on_or_before_2017-12-31",
+      "metadata_source": "SZSE public A-share list"
+    },
+    {
+      "symbol": "300059.SZ",
+      "name": "东方财富",
+      "exchange": "SZSE",
+      "industry": "J 金融业",
+      "security_type": "A_share_growth_enterprise_market",
+      "listing_date": "2010-03-19",
+      "eligibility_status": "listing_date_on_or_before_2017-12-31",
+      "metadata_source": "SZSE public A-share list"
+    },
+    {
+      "symbol": "300248.SZ",
+      "name": "新开普",
+      "exchange": "SZSE",
+      "industry": "I 信息技术",
+      "security_type": "A_share_growth_enterprise_market",
+      "listing_date": "2011-07-29",
+      "eligibility_status": "listing_date_on_or_before_2017-12-31",
+      "metadata_source": "SZSE public A-share list"
+    },
+    {
+      "symbol": "002187.SZ",
+      "name": "广百股份",
+      "exchange": "SZSE",
+      "industry": "F 批发零售",
+      "security_type": "A_share_main_board",
+      "listing_date": "2007-11-22",
+      "eligibility_status": "listing_date_on_or_before_2017-12-31",
+      "metadata_source": "SZSE public A-share list"
+    },
+    {
+      "symbol": "600284.SH",
+      "name": "浦东建设",
+      "exchange": "SSE",
+      "industry": "建筑业",
+      "security_type": "A_share_main_board",
+      "listing_date": "2004-03-16",
+      "eligibility_status": "listing_date_on_or_before_2017-12-31",
+      "metadata_source": "SSE public A-share list"
+    },
+    {
+      "symbol": "000892.SZ",
+      "name": "欢瑞世纪",
+      "exchange": "SZSE",
+      "industry": "R 文化传播",
+      "security_type": "A_share_main_board",
+      "listing_date": "1999-01-15",
+      "eligibility_status": "listing_date_on_or_before_2017-12-31",
+      "metadata_source": "SZSE public A-share list"
+    },
+    {
+      "symbol": "601929.SH",
+      "name": "吉视传媒",
+      "exchange": "SSE",
+      "industry": "信息传输、软件和信息技术服务业",
+      "security_type": "A_share_main_board",
+      "listing_date": "2012-02-23",
+      "eligibility_status": "listing_date_on_or_before_2017-12-31",
+      "metadata_source": "SSE public A-share list"
+    },
+    {
+      "symbol": "300189.SZ",
+      "name": "神农种业",
+      "exchange": "SZSE",
+      "industry": "A 农林牧渔",
+      "security_type": "A_share_growth_enterprise_market",
+      "listing_date": "2011-03-16",
+      "eligibility_status": "listing_date_on_or_before_2017-12-31",
+      "metadata_source": "SZSE public A-share list"
+    },
+    {
+      "symbol": "002468.SZ",
+      "name": "申通快递",
+      "exchange": "SZSE",
+      "industry": "G 运输仓储",
+      "security_type": "A_share_main_board",
+      "listing_date": "2010-09-08",
+      "eligibility_status": "listing_date_on_or_before_2017-12-31",
+      "metadata_source": "SZSE public A-share list"
+    },
+    {
+      "symbol": "601007.SH",
+      "name": "金陵饭店",
+      "exchange": "SSE",
+      "industry": "住宿和餐饮业",
+      "security_type": "A_share_main_board",
+      "listing_date": "2007-04-06",
+      "eligibility_status": "listing_date_on_or_before_2017-12-31",
+      "metadata_source": "SSE public A-share list"
+    },
+    {
+      "symbol": "002607.SZ",
+      "name": "中公教育",
+      "exchange": "SZSE",
+      "industry": "P 教育",
+      "security_type": "A_share_main_board",
+      "listing_date": "2011-08-10",
+      "eligibility_status": "listing_date_on_or_before_2017-12-31",
+      "metadata_source": "SZSE public A-share list"
+    },
+    {
+      "symbol": "601169.SH",
+      "name": "北京银行",
+      "exchange": "SSE",
+      "industry": "金融业",
+      "security_type": "A_share_main_board",
+      "listing_date": "2007-09-19",
+      "eligibility_status": "listing_date_on_or_before_2017-12-31",
+      "metadata_source": "SSE public A-share list"
+    },
+    {
+      "symbol": "603300.SH",
+      "name": "海南华铁",
+      "exchange": "SSE",
+      "industry": "租赁和商务服务业",
+      "security_type": "A_share_main_board",
+      "listing_date": "2015-05-29",
+      "eligibility_status": "listing_date_on_or_before_2017-12-31",
+      "metadata_source": "SSE public A-share list"
+    },
+    {
+      "symbol": "603377.SH",
+      "name": "ST东时",
+      "exchange": "SSE",
+      "industry": "教育",
+      "security_type": "A_share_main_board",
+      "listing_date": "2016-02-05",
+      "eligibility_status": "listing_date_on_or_before_2017-12-31",
+      "metadata_source": "SSE public A-share list"
+    },
+    {
+      "symbol": "601368.SH",
+      "name": "绿城水务",
+      "exchange": "SSE",
+      "industry": "电力、热力、燃气及水生产和供应业",
+      "security_type": "A_share_main_board",
+      "listing_date": "2015-06-12",
+      "eligibility_status": "listing_date_on_or_before_2017-12-31",
+      "metadata_source": "SSE public A-share list"
+    }
+  ]
+}

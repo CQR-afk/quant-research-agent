@@ -218,6 +218,19 @@ class MarketDataStore:
         with self._connect() as con:
             return con.execute(sql, params).df()
 
+    def query_provider_metadata(
+        self, *, provider: str, symbol: str, start: date | None = None, end: date | None = None,
+    ) -> pd.DataFrame:
+        clauses = ["provider=?", "symbol=?"]
+        params: list[object] = [provider, symbol]
+        for column, value in (("trade_date >=", start), ("trade_date <=", end)):
+            if value is not None:
+                clauses.append(f"{column} ?")
+                params.append(value)
+        sql = "SELECT * FROM provider_bar_metadata WHERE " + " AND ".join(clauses) + " ORDER BY trade_date"
+        with self._connect() as con:
+            return con.execute(sql, params).df()
+
     def status(self) -> pd.DataFrame:
         with self._connect() as con:
             return con.execute("SELECT market, exchange, symbol, source, adjustment, min(trade_date) start_date, max(trade_date) latest_date, count(*) AS row_count FROM market_bars GROUP BY ALL ORDER BY market, symbol, source, adjustment").df()

@@ -121,22 +121,32 @@ def build_research_dataset(
             raise ValueError(f"Pool exchange mismatch for {identity.symbol}: expected {identity.exchange}.")
         bars = store.query(symbol=identity.symbol, market=market, start=research_start.date(),
                            end=research_end.date(), adjustment=adjustment, source=source)
-        if bars.empty:
-            coverage_records.append({
-                **member, "rows": 0, "first_date": None, "last_date": None,
-                "expected_sessions": 0, "missing_sessions": None, "coverage_ratio": 0.0,
-                "max_consecutive_missing": None, "unexpected_dates": 0,
-                "history_start_status": "no_data; listing date and provider coverage are unknown",
-                "coverage_status": "no_data",
-            })
-            continue
-
         bars = bars.copy()
-        bars["trade_date"] = pd.to_datetime(bars["trade_date"]).dt.normalize()
-        if bars["adjustment"].nunique(dropna=False) != 1 or bars["adjustment"].iloc[0] != adjustment:
+        if not bars.empty:
+            bars["trade_date"] = pd.to_datetime(bars["trade_date"]).dt.normalize()
+        if not bars.empty and (bars["adjustment"].nunique(dropna=False) != 1 or bars["adjustment"].iloc[0] != adjustment):
             raise ValueError(f"Mixed or unexpected adjustment mode for {identity.symbol}.")
-        expected = calendar.sessions_between(bars["trade_date"].min(), bars["trade_date"].max())
-        observed = set(bars["trade_date"])
+
+        listing_date = pd.to_datetime(member.get("listing_date"), errors="coerce")
+        eligible_start = max(research_start, listing_date.normalize()) if pd.notna(listing_date) else research_start
+        expected = (calendar.sessions_between(eligible_start, research_end)
+                    if eligible_start <= research_end else pd.DatetimeIndex([]))
+        metadata = store.query_provider_metadata(provider=source, symbol=identity.symbol,
+                                                 start=research_start.date(), end=research_end.date()) if source else pd.DataFrame()
+        status_by_date: dict[pd.Timestamp, str | None] = {}
+        if not metadata.empty:
+            for row in metadata.itertuples():
+                try:
+                    status = json.loads(row.metadata_json).get("tradestatus")
+                    status = str(status).strip() if status is not None else None
+                except (TypeError, ValueError, AttributeError):
+                    status = None
+                status_by_date[pd.Timestamp(row.trade_date).normalize()] = status if status in {"0", "1"} else None
+
+        bar_dates = set(bars["trade_date"]) if not bars.empty else set()
+        # A bar or a provider's explicit trade-status record covers the session.
+        # Missing sessions without a status remain Unknown, never inferred as a halt.
+        observed = bar_dates | {day for day, status in status_by_date.items() if status in {"0", "1"}}
         missing = expected.difference(pd.DatetimeIndex(sorted(observed)))
         unexpected = [day for day in observed if not calendar.is_session(day)]
         coverage_ratio = len(expected.intersection(pd.DatetimeIndex(sorted(observed)))) / len(expected) if len(expected) else 0.0
@@ -146,16 +156,53 @@ def build_research_dataset(
             coverage_status = "gappy"
         else:
             coverage_status = "within_threshold"
-        actual_start = bars["trade_date"].min()
-        if actual_start > research_start:
-            history_status = "partial; pre-first-bar interval may be pre-listing or source gap and is not inferred"
+        if pd.notna(listing_date):
+            history_status = "listing-date-aware; pre-listing sessions excluded from expected coverage"
         else:
-            history_status = "starts at research boundary; listing history still not independently verified"
+            history_status = "listing date Unknown; expected coverage begins at research start"
+
+        unknown_status_dates = {day for day, status in status_by_date.items() if status is None}
+        if not bars.empty:
+            bars["provider_trade_status"] = bars["trade_date"].map(status_by_date)
+            prelisting_mask = bars["trade_date"] < eligible_start
+            unknown_status_dates.update(bars.loc[bars["provider_trade_status"].isna(), "trade_date"])
+            if source == "baostock":
+                research_mask = (bars["provider_trade_status"] == "1") & ~prelisting_mask
+            else:
+                research_mask = ~prelisting_mask
+            research_bars = bars.loc[research_mask].copy()
+            first_valid = research_bars["trade_date"].min() if not research_bars.empty else pd.NaT
+            last_valid = research_bars["trade_date"].max() if not research_bars.empty else pd.NaT
+            unknown_status_rows = len(unknown_status_dates) if source == "baostock" else 0
+            excluded_nontrading_rows = int((bars["provider_trade_status"] == "0").sum()) if source == "baostock" else 0
+            prelisting_rows = int(prelisting_mask.sum())
+            source_versions = sorted(bars["provider_version"].dropna().astype(str).unique().tolist())
+            adjustments = sorted(bars["adjustment"].dropna().astype(str).unique().tolist())
+        else:
+            research_bars = bars
+            first_valid = last_valid = pd.NaT
+            unknown_status_rows = excluded_nontrading_rows = 0
+            prelisting_rows = 0
+            source_versions = adjustments = []
+        coverage_by_year = []
+        for year in range(research_start.year, research_end.year + 1):
+            annual_expected = expected[expected.year == year]
+            annual_observed = observed.intersection(set(annual_expected))
+            annual_missing = annual_expected.difference(pd.DatetimeIndex(sorted(annual_observed)))
+            coverage_by_year.append({
+                "year": year,
+                "expected_sessions": len(annual_expected),
+                "observed_sessions": len(annual_observed),
+                "missing_sessions": len(annual_missing),
+                "missing_ratio": len(annual_missing) / len(annual_expected) if len(annual_expected) else None,
+                "missing_status": "Unknown suspension versus provider gap" if len(annual_missing) else None,
+            })
         coverage_records.append({
             **member,
-            "rows": len(bars),
-            "first_date": actual_start.date().isoformat(),
-            "last_date": bars["trade_date"].max().date().isoformat(),
+            "rows": len(research_bars),
+            "canonical_bar_records": len(bars),
+            "first_date": first_valid.date().isoformat() if pd.notna(first_valid) else None,
+            "last_date": last_valid.date().isoformat() if pd.notna(last_valid) else None,
             "expected_sessions": len(expected),
             "missing_sessions": len(missing),
             "missing_ratio": 1 - coverage_ratio if len(expected) else None,
@@ -163,12 +210,18 @@ def build_research_dataset(
             "max_consecutive_missing": _max_gap_days(expected, observed),
             "missing_dates_sample": [day.date().isoformat() for day in missing[:20]],
             "unexpected_dates": len(unexpected),
+            "provider_reported_nontrading_sessions": int(sum(status == "0" for status in status_by_date.values())),
+            "unknown_trade_status_sessions": unknown_status_rows,
+            "prelisting_records": prelisting_rows,
+            "missing_session_classification": "unknown_suspension_or_provider_gap" if len(missing) else None,
+            "coverage_by_year": coverage_by_year,
             "history_start_status": history_status,
             "coverage_status": coverage_status,
-            "source_versions": sorted(bars["provider_version"].dropna().astype(str).unique().tolist()),
-            "adjustments": sorted(bars["adjustment"].dropna().astype(str).unique().tolist()),
+            "source_versions": source_versions,
+            "adjustments": adjustments,
         })
-        bars_by_symbol.append(bars)
+        if not research_bars.empty:
+            bars_by_symbol.append(research_bars)
 
     if bars_by_symbol:
         bars = pd.concat(bars_by_symbol, ignore_index=True)
@@ -193,6 +246,11 @@ def build_research_dataset(
         dataset = features.merge(target_frame, on=["symbol", "prediction_date"], how="left", validate="one_to_one")
         dataset = dataset.merge(lineage, on=["symbol", "prediction_date"], how="left", validate="one_to_one")
         dataset = dataset.sort_values(["prediction_date", "symbol"], kind="stable").reset_index(drop=True)
+        if (dataset["prediction_date"] > research_end).any():
+            raise ValueError("Prediction dates exceed the configured development-period cap.")
+        realized_ends = pd.to_datetime(dataset["label_end_date"], errors="coerce")
+        if realized_ends.dropna().gt(research_end).any():
+            raise ValueError("Five-observation labels exceed the configured development-period cap.")
     else:
         dataset = pd.DataFrame(columns=[
             "symbol", "prediction_date", *feature_columns, "target_5d", "label_end_date",
@@ -205,6 +263,8 @@ def build_research_dataset(
         "dataset_id": f"ashare_research_{uuid.uuid4().hex}",
         "created_at_utc": pd.Timestamp.now(tz="UTC").isoformat(),
         "pool_id": pool["pool_id"],
+        "universe_hash": pool.get("universe_hash"),
+        "parent_universe_hash": pool.get("parent_universe_hash"),
         "pool_selection_date": pool["selection_date"],
         "pool_size": len(pool["members"]),
         "symbols_with_data": int(sum(record["rows"] > 0 for record in coverage_records)),
@@ -230,6 +290,8 @@ def build_research_dataset(
         } if len(bars) else {}),
         "point_in_time_status": "NOT_POINT_IN_TIME" if adjustment != "none" else "UNADJUSTED_VENDOR_SNAPSHOT",
         "point_in_time_limit": "No point-in-time corporate-action reconstruction; provider adjusted history is a vendor snapshot and may be revised. Unadjusted price returns exclude distributions.",
+        "research_sample_policy": "BaoStock tradestatus=1 records only; tradestatus=0 retained in raw/provider metadata and excluded from feature/target observations; missing status is Unknown and excluded from research rows.",
+        "development_only": True,
         "survivorship_bias_note": pool["survivorship_bias_note"],
         "dataset_rows": len(dataset),
         "feature_complete_rows": int(dataset[feature_columns].notna().all(axis=1).sum()) if len(dataset) else 0,
@@ -243,6 +305,7 @@ def build_research_dataset(
     temporary = output_path.with_name(f".{output_path.stem}.{uuid.uuid4().hex}.tmp.parquet")
     dataset.to_parquet(temporary, index=False)
     os.replace(temporary, output_path)
+    manifest["dataset_sha256"] = hashlib.sha256(output_path.read_bytes()).hexdigest()
     _write_json_atomic(manifest_path, manifest)
     return DatasetBuildResult(dataset, coverage, manifest, output_path, manifest_path)
 

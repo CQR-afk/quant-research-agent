@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import uuid
+import json
 from datetime import date, timedelta
 import time
 
@@ -45,22 +46,32 @@ def download_market_data(
         store.save_raw(raw, market="CN_A", symbol=identity.symbol, adjustment=adjustment,
                        ingest_id=ingest_id, source=provider.name, provider_version=provider.version,
                        source_interface=provider.interface, downloaded_at=now)
-        standardized = provider.normalize_raw_daily_bars(raw, identity.symbol, adjustment, strict=False)
+        provider_metadata = provider.normalize_provider_metadata(raw, identity.symbol)
+        nontrading_mask = pd.Series(False, index=raw.index)
+        if "tradestatus" in raw:
+            nontrading_mask = raw["tradestatus"].astype(str).str.strip().eq("0")
+        eligible_raw = raw.loc[~nontrading_mask].reset_index(drop=True)
+        standardized = provider.normalize_raw_daily_bars(eligible_raw, identity.symbol, adjustment, strict=False)
         standardized["ingest_id"] = ingest_id
         standardized["downloaded_at"] = now
         validation = validate_daily_bars(
             standardized, expected_market="CN_A", expected_exchange=identity.exchange,
             expected_symbol=identity.symbol, expected_adjustment=adjustment, require_amount=True,
         )
-        store.record_issues(ingest_id, identity.symbol, validation.issues)
+        excluded = pd.DataFrame([
+            {"row_index": int(index), "issue_type": "provider_reported_nontrading",
+             "detail": "BaoStock tradestatus=0; raw record retained, excluded from canonical traded-bar observations."}
+            for index in raw.index[nontrading_mask]
+        ], columns=["row_index", "issue_type", "detail"])
+        issues = pd.concat([validation.issues, excluded], ignore_index=True)
+        store.record_issues(ingest_id, identity.symbol, issues)
         if not validation.is_valid:
             first = validation.issues.iloc[0]
             store.finish_ingest(ingest_id, status="rejected", fetched=len(raw), rejected=len(validation.rejected),
                                 error=f"{first['issue_type']}: {first['detail']}")
             return {"ingest_id": ingest_id, "symbol": identity.symbol, "status": "rejected",
                     "fetched_rows": len(raw), "accepted_rows": 0, "rejected_rows": len(validation.rejected),
-                    "updated_rows": 0, "issues": validation.issues}
-        provider_metadata = provider.normalize_provider_metadata(raw, identity.symbol)
+                    "updated_rows": 0, "excluded_nontrading_rows": len(excluded), "issues": issues}
         if not provider_metadata.empty:
             provider_metadata = provider_metadata.copy()
             provider_metadata["provider"] = provider.name
@@ -73,7 +84,8 @@ def download_market_data(
         store.finish_ingest(ingest_id, status="success", fetched=len(raw), accepted=len(validation.accepted), updated=updated)
         return {"ingest_id": ingest_id, "symbol": identity.symbol, "status": "success",
                 "fetched_rows": len(raw), "accepted_rows": len(validation.accepted),
-                "rejected_rows": 0, "updated_rows": updated, "issues": validation.issues}
+                "rejected_rows": len(validation.rejected), "excluded_nontrading_rows": len(excluded),
+                "updated_rows": updated, "issues": issues}
     except KeyboardInterrupt:
         store.finish_ingest(ingest_id, status="interrupted", error="interrupted by user; rerun this ticker to resume safely")
         raise
@@ -160,9 +172,19 @@ def _range_is_complete(
         return False
     existing = store.query(symbol=symbol, market="CN_A", start=start, end=end,
                            adjustment=adjustment, source=source)
-    if existing.empty:
-        return False
-    present = set(pd.to_datetime(existing["trade_date"]).dt.normalize())
+    present = set(pd.to_datetime(existing["trade_date"]).dt.normalize()) if not existing.empty else set()
+    metadata = store.query_provider_metadata(provider=source, symbol=symbol, start=start, end=end)
+    if not metadata.empty:
+        for row in metadata.itertuples():
+            try:
+                state = json.loads(row.metadata_json).get("tradestatus")
+            except (TypeError, ValueError, AttributeError):
+                state = None
+            # Explicit no-trade metadata covers a session for every adjustment
+            # because no market bar should exist for it. A traded session is
+            # covered only by a bar in this exact source/adjustment partition.
+            if str(state).strip() == "0":
+                present.add(pd.Timestamp(row.trade_date).normalize())
     return set(expected).issubset(present)
 
 

@@ -348,3 +348,11 @@ Step 4.4 达到停止条件，到此暂停。
 ## Step 4.5R.2（2026-10-05）
 
 在用户授权的项目级范围内，通过独立 `trust_env=False` 会话获取 SSE 主板、科创板和 SZSE A 股公开清单，验证行数分别为 1,702、618、2,904，写入原始文件、来源元数据和 SHA-256，并生成 5,224 条标准化 Security Master。扩展 SZSE `302` 代码段映射后，三源均无重复证券代码。按固定 seed、交易所/行业分层哈希和原 U11 锚点规则冻结 U50/U100；完整 3,225 个 eligible candidate 排序已保留以支持后续 deterministic replacement。BaoStock 0.9.4 `query_stock_basic(code=...)` 为 U100 的 100 只股票各返回一条记录，IPO 日期与交易所名单 100/100 一致；它不参与选股，行业仍采用交易所来源。选股不使用收益/模型字段，current snapshot 的幸存者偏差仍 unresolved。新增 8 项离线测试，全套 100 项通过，`compileall` 通过；将 uv 缓存指向项目内 `.uv-cache` 后，107 个依赖全部兼容。没有行情回填、Legacy Test/Holdout 访问或模型运行。
+
+## Step 4.5A（2026-10-05）
+
+- 将尚未提交的 Step 4.5R.2 修改保存为本地检查点 `1edd013`；U50/U100 hash、3 个官方来源文件 SHA-256 与 Security Master 检查通过。`.env`、`data/`、数据库和 artifacts 处于忽略状态。
+- 在现有 backfill 逻辑中修复按 frozen universe order 处理批次；为 BaoStock `tradestatus=0` 行增加显式 `provider_reported_nontrading` 分类。Raw 原样保留，非交易记录不写入新 canonical 成交行/研究观察，不合成 volume/amount。缺行停牌原因仍 Unknown。调整口径的完成判断只允许精确的 source/adjustment 行与 no-trade metadata 证明覆盖，避免 qfq 元数据错误跳过 none。
+- Pilot：冻结顺序首 3 个新增 symbol 的 none/qfq 均成功，重复请求均跳过。之后 39 个新增成员的两个回填 job 均 39/39 完成；U11 anchors 无新行情请求。每个口径有 4 次初始校验拒绝（12 行，均为 `tradestatus=0` 的空量额），在保留 raw 后按已验证 no-trade 规则重试成功。
+- 完成 U50 逐股/年度行情覆盖检查与 qfq development-only 数据集。71,622 行，68,672 完整特征，71,372 有效标签；train/validation 56,072/11,850；宽度门禁通过。qfq 的 50 个证券快照时间各不相同，仍标记 NOT_POINT_IN_TIME。
+- 自动化测试 106/106 通过，`compileall`、`git diff --check` 通过，Python 3.14.6 环境 `uv pip check` 检查 107 个包兼容。未训练模型，未访问实际 Legacy Test 或 Sealed Holdout。一次初始预检聚合查询读取了旧 U11 记录的 max-date 元数据（至 2025-12-31），未读取/分析其 OHLC、收益或指标；之后的 U50 数据查询和数据集严格截止 2023-12-31。完整记录：[`step_4_5A_u50_data_validation.md`](step_4_5A_u50_data_validation.md)。
