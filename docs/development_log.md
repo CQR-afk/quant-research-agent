@@ -390,3 +390,11 @@ Step 4.4 达到停止条件，到此暂停。
 - BaoStock 仅做两个有界公司行动元数据请求：2023 年分红与 2023-12 因子各一行。历史因子被标为 `historical_factor_snapshot`；没有可验的历史发布时间版本，故未运行价格重建。SSE 公告的本机请求返回 HTML 访问挑战，原响应留存且未绕过。
 - 新增 `config/step_4_7_pilot_sources.json`、`src/quantlab/research/data_foundation.py`、离线测试与 `docs/step_4_7_pit_historical_universe_feasibility.md`；机器 JSON 在被忽略的 `artifacts/reports/`。两维度均仅部分可行，综合状态 `data_foundation_upgrade_partial` / `historical_data_foundation_not_verified`。未访问 Legacy Test、Sealed Holdout 或读取新行情。
 - 新增 10 项离线测试；全套 142 项通过，`compileall` 与 `git diff --check` 通过，uv 检查 107 个包兼容；Python 3.14.6。Step 4.7 改动保留在工作区，未提交或推送。
+
+## Step 4.8A（2026-10-05）
+
+- 核对 Step 4.7 工作区、142 项测试、compileall、依赖兼容和忽略规则后，创建本地 checkpoint `d24055a chore: checkpoint step 4.7 data foundation feasibility audit`，无 remote/push。Step 4.7 四项研究状态保持不变。
+- 对 SSE/SZSE 官方交易所页面、退市入口、年鉴与事件披露进行来源审计。保存上交所 2023 卷统计年鉴、深交所 2023 市场统计年鉴、深交所 `300336` 摘牌公告、上交所 `600209` 官方终止上市决定 HTML，以及交叉披露；保存并校验 SHA-256。逐股 BaoStock `query_stock_basic` 三只代码均返回一行、错误码 0。没有拿到可核验完整日名册。
+- `600209.SH`、`002618.SZ`、`300336.SZ` 组成确定性 pilot；三者均不在现有 2026 master。listing interval 与 trading status 分开记录；未知交易状态不推定为可交易。四个固定日期的 roster count 保持 null。
+- Tushare token 在环境和 `.env` 中均不存在，标记 `credential_unavailable`，不发起请求。`stock_basic`、`bak_basic` 只记录官方文档的能力与权限条件。状态为 `historical_universe_coverage_partial`，不生成历史 Universe artifact。
+- 新增来源配置、核验模块、12 项离线测试和审计报告，并更新 README 与项目状态。机器 JSON/CSV 与原始来源都由 `.gitignore` 排除。全套 154 项测试通过，`compileall`、`git diff --check` 通过，uv 检查 107 个包兼容；Python 3.14.6。Step 4.8A 变更保留在工作区，没有新提交或推送。

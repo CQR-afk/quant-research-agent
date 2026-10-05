@@ -189,3 +189,7 @@ Step 4.5C 已提交为本地 checkpoint `a307a55`（`chore: checkpoint step 4.5C
 Step 4.6 已按要求提交本地检查点 `e385264`，没有 remote/push。Step 4.7 仅对官方交易所证券日期、BaoStock 单股基本资料、分红/复权因子语义做有界数据来源审计。深交所托管公告与 BaoStock 0.9.4 单股查询一致确认 `002618.SZ` 的上市日 2011-09-20 和摘牌日 2022-06-22；2026 当前官方名单含 `000001.SZ`，但其历史持续上市状态与所有历史退市证券的完整枚举仍未知。`listed_on` pilot 将当前名单的过去日期明确标为 `unknown`，不以空 `outDate` 冒充历史证明。
 
 BaoStock 2023 分红查询与 2023-12 因子查询各真实返回一行；因子只有历史事件日及本次获取的快照，没有已验证的历史 as-of 版本。SSE 特别分红公告的本机直接请求返回 HTML 访问挑战，未绕过。未进行价格重建、读行情、训练或重算 IC。状态为 `historical_universe_partially_feasible`、`pit_price_partially_feasible`，合并 `data_foundation_upgrade_partial`，并保留 `historical_data_foundation_not_verified`。原始来源哈希、真实字段、两证券 pilot、Tushare 文档性候选接口及限制详见 [`step_4_7_pit_historical_universe_feasibility.md`](step_4_7_pit_historical_universe_feasibility.md)。Step 4.2–4.6 实验产物与 2024–2025 Legacy Test/2026+ Holdout 均未触碰。
+
+## Step 4.8A — Historical Universe Coverage（2026-10-05）
+
+Step 4.7 checkpoint 为 `d24055a`，本地保存且未 push。上交所年鉴（2023 卷）检出 2022 年证券代码 `600209` 年度记录；深交所 2023 年鉴退市表检出 `300336`，含上市日与最后交易日。三只退市样本（另含 `002618`）与 BaoStock 单股基础资料进行交叉检查，当前 2026 Security Master 均不含它们。交易所年度资料和公告提供了部分历史成员证据，但没有四个固定检查日期的逐日完整名册；覆盖总数、沪深数量和状态分布保持 Unknown。Tushare token 不可用，没有真实调用。结论为 `historical_universe_coverage_partial`，没有生成历史 universe artifact；Step 4.7 四个状态保持原值。全套 154 项测试通过（新增 12 项），`compileall`、`git diff --check` 通过，uv 检查 107 个包兼容；Python 3.14.6。详情见 [`step_4_8A_historical_universe_coverage.md`](step_4_8A_historical_universe_coverage.md)。

@@ -1,6 +1,16 @@
 # Quant Research Agent
 
-Quant Research Agent 是一个 A 股优先、港股其次的本地量化研究项目。它提供行情接入、数据质量验证、本地数据存储、研究数据集和 readiness-gated LightGBM 基线工程。当前定位是研究与预测；不连接券商账户，不提供自动下单。
+**A local-first quantitative research platform focused on China A-shares, with Hong Kong market support planned as a later extension.**
+
+Quant Research Agent 是一个 A 股优先、港股后续扩展的本地量化研究项目，当前工作集中在金融数据工程、可复现研究、预测诊断和研究治理。它不连接券商账户、不执行自动下单、不提供投资建议，也不声称已验证可盈利的 Alpha；项目不是 trading bot。
+
+## Research findings and limitations
+
+- The original 2024–2025 legacy test did not validate the LightGBM signal: its saved cross-sectional Pearson IC and Rank IC means were negative. This is a historical research result, not a strategy return or a new evaluation in this release.
+- Feature v2 and alternative targets were not promoted. The preregistered U100 breadth result is `breadth_not_supported`; Step 4.6 ended `root_cause_not_identified`.
+- Step 4.7 remains `data_foundation_upgrade_partial`; Step 4.8A remains `historical_universe_coverage_partial`. Historical A-share membership is not fully reconstructed, and survivorship bias remains unresolved.
+- BaoStock qfq is `vendor_snapshot_adjusted`, not strict point-in-time reconstructed pricing. The five-observation target uses five subsequent valid trading observations, not necessarily five exchange trading sessions.
+- Current scope includes development-only data and model research. No strategy profitability, investable performance, or production readiness is claimed.
 
 ## 目前实现
 
@@ -14,6 +24,8 @@ Quant Research Agent 是一个 A 股优先、港股其次的本地量化研究�
 - `quantlab research build-dataset` 从本地 DuckDB 构建逐股特征、未来五个有效观察期收益标签及覆盖报告。数据集只选一个 Provider；若指定复权口径存在多个来源，必须显式指定 `--provider`。
 - `quantlab research walk-forward` 使用固定 LightGBM 参数，在 2018–2023 三个 expanding-window folds 对比 v1 与 scale-invariant v2 特征；统一样本键，生成逐折预测、IC、重要性、预测分布和重叠标签诊断。该命令不评价 2024 年及以后的表现。
 - `quantlab model train --model lightgbm --dataset ... --manifest ...` 运行前执行数据就绪门禁；门禁失败时不拟合。已完成一次固定参数的真实 BaoStock qfq 基线实验，数据为供应商复权快照，明确不是 point-in-time 价格。
+- Historical coverage tooling audits official SSE/SZSE sources and records where historical membership evidence remains incomplete. The current Security Master is a current-listing snapshot, not a point-in-time historical universe.
+- The research stack includes a 17-feature pipeline, forward-return targets, purge/embargo safeguards, readiness gates, fixed-parameter LightGBM experiments, development-only walk-forward studies, and deterministic U11/U50/U100 breadth diagnostics. Signal-failure diagnostics preserve inconclusive findings rather than promoting a cause.
 
 ## Provider 单位与价格口径
 
@@ -151,3 +163,7 @@ Step 4.6 只对 Step 4.5C 已保存的 U11/U50/U100 开发期预测、验证输�
 ## Step 4.7 — 历史证券与 PIT 价格可行性
 
 Step 4.6 已保存为本地检查点 `e385264`。Step 4.7 只核查证券历史日期和公司行动来源。深交所官方上市/摘牌文件与 BaoStock 单股 `outDate` 对一只真实退市证券日期一致；现有 2026 名单仍无法枚举 2018–2023 全部退市证券。BaoStock 分红与历史因子可获取，但本轮未验证它们在历史日期当时的版本，因而没有重建 PIT 价格。结论为 `historical_universe_partially_feasible`、`pit_price_partially_feasible`，合并为 **`data_foundation_upgrade_partial`**；`historical_data_foundation_not_verified`。来源哈希、样本区间、访问限制和下一步条件见 [`docs/step_4_7_pit_historical_universe_feasibility.md`](docs/step_4_7_pit_historical_universe_feasibility.md)。本地只读核验命令为 `.\.venv\Scripts\python.exe -m quantlab.research.data_foundation`，机器报告写入被忽略的 `artifacts/reports/data_foundation_feasibility_step_4_7.json`。
+
+## Step 4.8A — 历史股票池覆盖验证
+
+Step 4.7 已保存为本地检查点 `d24055a`。本阶段获得上交所 2023 卷统计年鉴、深交所 2023 市场统计年鉴，并核验三只真实退市证券的交易所披露和 BaoStock 单股元数据；当前 2026 Security Master 不含这三只证券，证明当前名单不能代表历史全集。年鉴年度表和个股事件能支持部分历史重建，但四个固定日期的逐日 roster 仍未取得，故状态为 `historical_universe_coverage_partial`，不创建历史 Universe artifact。Tushare token 本机不可用，接口仅做文档审计。报告见 [`docs/step_4_8A_historical_universe_coverage.md`](docs/step_4_8A_historical_universe_coverage.md)，离线复核命令为 `.\.venv\Scripts\python.exe -m quantlab.research.historical_universe_coverage`，机器 JSON/CSV 位于被忽略的 `artifacts/reports/`。
