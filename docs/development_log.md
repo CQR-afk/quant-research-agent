@@ -382,3 +382,11 @@ Step 4.4 达到停止条件，到此暂停。
 - 生成 `docs/step_4_6_signal_failure_diagnostics.md` 及本地 JSON/CSV。U100 Rank IC 三折为 -0.00291/+0.04668/-0.00857；2021 正 IC 日比例略高于一半但负值幅度抵消均值，2022 各季度正向但强弱不一，2023 仍为负。不同切片没有给出唯一解释，最终状态 `root_cause_not_identified`。
 - 审计确认当前行业快照分组过窄且不是历史 PIT；1,684 个 no-trade sessions 未进入当前研究样本；五有效观察标签的间隔可拉长，U100 最大日历跨度 150 日。Baseline manifest、旧 U11 快照差异、Legacy Test 与 Sealed Holdout 隔离、qfq 非 PIT 和 survivorship 限制保持记录。
 - 更新 README 与 `docs/project_status.md`。Step 4.6 代码/文档暂留工作区，诊断产物由 `.gitignore` 排除；本阶段结束即暂停，下一阶段不自动启动。
+
+## Step 4.7（2026-10-05）
+
+- Step 4.6 经 132 项测试、编译、diff、依赖及忽略规则检查后，建立本地 checkpoint `e385264 chore: checkpoint step 4.6 signal failure diagnostics`；没有 remote 或 push。冻结 Step 4.2–4.6 原实验。
+- 官方小样本：保存深交所托管的 `002618.SZ` 上市日期披露 PDF 和摘牌公告 PDF，核验 SHA-256；BaoStock 0.9.4 `query_stock_basic(code=...)` 在独立进程 20 秒看门狗内对退市 `002618.SZ` 与在市 `000001.SZ` 均成功返回一行。真实退市样本的 `ipoDate/outDate` 与公告边界一致。2026 当前交易所名单不含该退市证券，不能替代历史名录。
+- BaoStock 仅做两个有界公司行动元数据请求：2023 年分红与 2023-12 因子各一行。历史因子被标为 `historical_factor_snapshot`；没有可验的历史发布时间版本，故未运行价格重建。SSE 公告的本机请求返回 HTML 访问挑战，原响应留存且未绕过。
+- 新增 `config/step_4_7_pilot_sources.json`、`src/quantlab/research/data_foundation.py`、离线测试与 `docs/step_4_7_pit_historical_universe_feasibility.md`；机器 JSON 在被忽略的 `artifacts/reports/`。两维度均仅部分可行，综合状态 `data_foundation_upgrade_partial` / `historical_data_foundation_not_verified`。未访问 Legacy Test、Sealed Holdout 或读取新行情。
+- 新增 10 项离线测试；全套 142 项通过，`compileall` 与 `git diff --check` 通过，uv 检查 107 个包兼容；Python 3.14.6。Step 4.7 改动保留在工作区，未提交或推送。

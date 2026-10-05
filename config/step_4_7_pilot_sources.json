@@ -1,0 +1,71 @@
+{
+  "schema_version": "step4.7-pilot-v1",
+  "classification": "DATA_FOUNDATION_FEASIBILITY",
+  "scope": "Two-security historical interval pilot and one corporate-action metadata probe; not a market universe",
+  "official_documents": [
+    {
+      "source_id": "szse_002618_listing_reference_2013",
+      "source_organization": "Shenzhen Stock Exchange hosted company disclosure",
+      "source_url": "https://disc.static.szse.cn/disc/disk01/finalpage/2013-03-12/71546c34-1ec4-49c7-8223-d803baa27521.PDF",
+      "local_path": "data/raw/data_foundation_feasibility/szse_002618_listing_reference_2013.pdf",
+      "sha256": "26acfaef2975acb8ab0804961792b54542b3196d27efbd61d79555c3a88acfcc",
+      "retrieved_at_utc": "2026-10-05T03:20:38.558318+00:00",
+      "publication_date": "2013-03-12",
+      "content_type": "application/pdf",
+      "pilot_extracted_fields": ["symbol", "exchange", "listing_date"],
+      "pilot_record_count": 1,
+      "extraction_note": "The hosted 2013 company disclosure states 002618 listed on SZSE on 2011-09-20; compared with the official 2011 listing notice rendered at www.szse.cn."
+    },
+    {
+      "source_id": "szse_002618_delisting_2022",
+      "source_organization": "Shenzhen Stock Exchange hosted company disclosure",
+      "source_url": "https://disc.static.szse.cn/disc/disk03/finalpage/2022-06-22/401dca46-84da-4048-8012-ad15c1dc9425.PDF",
+      "local_path": "data/raw/data_foundation_feasibility/szse_002618_delisting.pdf",
+      "sha256": "fe09378fd3facc5f6e0fc05018bb87fcc41a21ccb92216e3633b0c058b3ea5c5",
+      "retrieved_at_utc": "2026-10-05T03:20:05.257258+00:00",
+      "publication_date": "2022-06-22",
+      "content_type": "application/pdf",
+      "pilot_extracted_fields": ["symbol", "security_type", "decision_date", "last_trading_date", "delisting_date"],
+      "pilot_record_count": 1,
+      "extraction_note": "The hosted announcement names 002618, RMB ordinary share, last trading date 2022-06-21 and delisting 2022-06-22."
+    },
+    {
+      "source_id": "sse_600519_dividend_2023_access_response",
+      "source_organization": "Shanghai Stock Exchange",
+      "source_url": "https://static.sse.com.cn/disclosure/listedinfo/announcement/c/new/2023-12-14/600519_20231214_WR1C.pdf",
+      "local_path": "data/raw/data_foundation_feasibility/sse_600519_dividend_20231214_access_response.html",
+      "sha256": "6a43d991661ce8d00ac91549362dfcbc0ce093e67db8999ccb205cbb5ebfa515",
+      "retrieved_at_utc": "2026-10-05T03:23:15.061843+00:00",
+      "publication_date": "2023-12-14",
+      "content_type": "text/html",
+      "pilot_extracted_fields": [],
+      "pilot_record_count": 0,
+      "extraction_note": "Local direct request received an HTML access challenge, not the PDF. No bypass was attempted. Search rendering showed the official announcement, but this local response is not corporate-action evidence."
+    }
+  ],
+  "pilot_records": [
+    {
+      "symbol": "000001.SZ",
+      "exchange": "SZSE",
+      "security_type": "A_share_main_board",
+      "listing_date": "1991-04-03",
+      "delisting_date": null,
+      "status_at_snapshot": "current_listed",
+      "historical_status": "unknown",
+      "source_ids": ["szse_current_a_share_list_20261004", "baostock_sz_000001"],
+      "selection_class": "current_official_snapshot"
+    },
+    {
+      "symbol": "002618.SZ",
+      "exchange": "SZSE",
+      "security_type": "A_share_main_board",
+      "listing_date": "2011-09-20",
+      "delisting_date": "2022-06-22",
+      "status_at_snapshot": "delisted",
+      "historical_status": "documented_interval_not_trading_status",
+      "source_ids": ["szse_002618_listing_reference_2013", "szse_002618_delisting_2022", "baostock_sz_002618"],
+      "selection_class": "official_documented_delisted"
+    }
+  ],
+  "selection_rule": "Choose the lexicographically first verified current SZSE A-share pilot and the lexicographically first independently documented delisted SZSE A-share pilot from these two source classes; sort output by symbol. This verifies interval logic only and does not select a research universe."
+}

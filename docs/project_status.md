@@ -182,4 +182,10 @@ Step 4.5C 已提交为本地 checkpoint `a307a55`（`chore: checkpoint step 4.5C
 
 主要观察：U100 三折 Rank IC 为 -0.00291/+0.04668/-0.00857；2021 正 IC 日比例 53.65% 但负向日幅度较大，2023 负 IC 日占比 51.29%；2022 正向结果分布于多个季度，但强度不均。当前行业快照每组最多 7 只，无法达到预设 8 只组内诊断宽度，且行业标签非历史 PIT。五有效成交观察目标与交易所 session 的间隔在少数样本中显著拉长（U100 最大日历跨度 150 日、最大 session 距离 100）；这不改变既有标签计算正确性，但限制统一持有期解释。Baseline v1 manifest hash、Step 4.3/4.4/4.5C 状态、旧 U11 版本差异、非 PIT 和 survivorship 限制均核对通过。机器结果在被忽略的 `artifacts/reports/signal_failure_diagnostics_20261005T021422Z_83390a3990_final_v2/`；分析和后续建议见 [`step_4_6_signal_failure_diagnostics.md`](step_4_6_signal_failure_diagnostics.md)。
 
-全套 132 项测试通过，`compileall` 与 `git diff --check` 通过；Python 3.14.6，uv 检查 107 个包兼容。新增 Step 4.6 代码和文档尚未提交，本阶段到此停止。
+全套 132 项测试通过，`compileall` 与 `git diff --check` 通过；Python 3.14.6，uv 检查 107 个包兼容。Step 4.6 已于下一阶段开始前保存为本地检查点 `e385264`。
+
+## Step 4.7 — Historical Universe / PIT Price Feasibility（2026-10-05）
+
+Step 4.6 已按要求提交本地检查点 `e385264`，没有 remote/push。Step 4.7 仅对官方交易所证券日期、BaoStock 单股基本资料、分红/复权因子语义做有界数据来源审计。深交所托管公告与 BaoStock 0.9.4 单股查询一致确认 `002618.SZ` 的上市日 2011-09-20 和摘牌日 2022-06-22；2026 当前官方名单含 `000001.SZ`，但其历史持续上市状态与所有历史退市证券的完整枚举仍未知。`listed_on` pilot 将当前名单的过去日期明确标为 `unknown`，不以空 `outDate` 冒充历史证明。
+
+BaoStock 2023 分红查询与 2023-12 因子查询各真实返回一行；因子只有历史事件日及本次获取的快照，没有已验证的历史 as-of 版本。SSE 特别分红公告的本机直接请求返回 HTML 访问挑战，未绕过。未进行价格重建、读行情、训练或重算 IC。状态为 `historical_universe_partially_feasible`、`pit_price_partially_feasible`，合并 `data_foundation_upgrade_partial`，并保留 `historical_data_foundation_not_verified`。原始来源哈希、真实字段、两证券 pilot、Tushare 文档性候选接口及限制详见 [`step_4_7_pit_historical_universe_feasibility.md`](step_4_7_pit_historical_universe_feasibility.md)。Step 4.2–4.6 实验产物与 2024–2025 Legacy Test/2026+ Holdout 均未触碰。

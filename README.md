@@ -147,3 +147,7 @@ U100 的 2021/2022/2023 Rank IC 为 `-0.00291 / +0.04668 / -0.00857`，两折为
 Step 4.6 只对 Step 4.5C 已保存的 U11/U50/U100 开发期预测、验证输入、固定模型、数据集及治理报告做事后诊断。结论为 `root_cause_not_identified`；U100 三折 Rank IC 为 `-0.00291 / +0.04668 / -0.00857`。报告记录每日 IC 尾部、2022 分期与分组、逐股和当前行业标签限制、股票尺度代理、全部 17 个单因子描述性结果、no-trade/目标期限、已保存基线及治理核对。所有指标标记 `POST_HOC_DIAGNOSTIC`，单因子结果标记 `EXPLORATORY_UNIVARIATE_DIAGNOSTIC`，不构成模型验证。
 
 报告见 [`docs/step_4_6_signal_failure_diagnostics.md`](docs/step_4_6_signal_failure_diagnostics.md)，本地 JSON/CSV 位于被忽略的 `artifacts/reports/signal_failure_diagnostics_20261005T021422Z_83390a3990_final_v2/`。使用 `quantlab research signal-diagnostics` 可复核固定输入；此命令不训练模型。Step 4.6 不访问 Legacy Test 或 Sealed Holdout，不下载行情，也未修改冻结研究输入。qfq 仍非 point-in-time，幸存者偏差 unresolved；目标期限是五个有效成交观察，不保证五个交易所交易日。
+
+## Step 4.7 — 历史证券与 PIT 价格可行性
+
+Step 4.6 已保存为本地检查点 `e385264`。Step 4.7 只核查证券历史日期和公司行动来源。深交所官方上市/摘牌文件与 BaoStock 单股 `outDate` 对一只真实退市证券日期一致；现有 2026 名单仍无法枚举 2018–2023 全部退市证券。BaoStock 分红与历史因子可获取，但本轮未验证它们在历史日期当时的版本，因而没有重建 PIT 价格。结论为 `historical_universe_partially_feasible`、`pit_price_partially_feasible`，合并为 **`data_foundation_upgrade_partial`**；`historical_data_foundation_not_verified`。来源哈希、样本区间、访问限制和下一步条件见 [`docs/step_4_7_pit_historical_universe_feasibility.md`](docs/step_4_7_pit_historical_universe_feasibility.md)。本地只读核验命令为 `.\.venv\Scripts\python.exe -m quantlab.research.data_foundation`，机器报告写入被忽略的 `artifacts/reports/data_foundation_feasibility_step_4_7.json`。
