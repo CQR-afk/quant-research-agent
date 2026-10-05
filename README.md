@@ -141,3 +141,9 @@ Step 4.5B 已通过 U100 数据质量与 breadth gate（`u100_data_ready`）。U
 在 `bb66b9a` 的 Step 4.5B 检查点上，`quantlab research breadth-study` 对 U11/U50/U100 分别按固定 Feature v1、五观察期 Raw Target、原 LightGBM 参数进行 2018–2023 三折 Walk-forward。训练前的一致性门禁通过：三个当前数据集的共有样本与特征/标签一致，143,911 条 U100 研究观察均有 BaoStock `tradestatus=1` 证明。旧 Step 4.3 U11 快照保留为历史参考，本轮使用当前 no-trade 规则重新构建 U11。
 
 U100 的 2021/2022/2023 Rank IC 为 `-0.00291 / +0.04668 / -0.00857`，两折为负，预注册结论为 **`breadth_not_supported`**。三池 common-date 比较无日期丢失；anchor-only 诊断、动量/训练均值基线、月/季度 IC、特征重要性及模型重载复现均已保存。详细 Fold 结果和限制见 [`docs/step_4_5C_breadth_robustness.md`](docs/step_4_5C_breadth_robustness.md)。qfq 仍非 PIT，当前名单仍有幸存者偏差；该结论不代表可交易策略表现。
+
+## Step 4.6 — Signal Failure Diagnostics
+
+Step 4.6 只对 Step 4.5C 已保存的 U11/U50/U100 开发期预测、验证输入、固定模型、数据集及治理报告做事后诊断。结论为 `root_cause_not_identified`；U100 三折 Rank IC 为 `-0.00291 / +0.04668 / -0.00857`。报告记录每日 IC 尾部、2022 分期与分组、逐股和当前行业标签限制、股票尺度代理、全部 17 个单因子描述性结果、no-trade/目标期限、已保存基线及治理核对。所有指标标记 `POST_HOC_DIAGNOSTIC`，单因子结果标记 `EXPLORATORY_UNIVARIATE_DIAGNOSTIC`，不构成模型验证。
+
+报告见 [`docs/step_4_6_signal_failure_diagnostics.md`](docs/step_4_6_signal_failure_diagnostics.md)，本地 JSON/CSV 位于被忽略的 `artifacts/reports/signal_failure_diagnostics_20261005T021422Z_83390a3990_final_v2/`。使用 `quantlab research signal-diagnostics` 可复核固定输入；此命令不训练模型。Step 4.6 不访问 Legacy Test 或 Sealed Holdout，不下载行情，也未修改冻结研究输入。qfq 仍非 point-in-time，幸存者偏差 unresolved；目标期限是五个有效成交观察，不保证五个交易所交易日。

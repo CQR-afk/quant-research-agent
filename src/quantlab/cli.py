@@ -33,6 +33,7 @@ from quantlab.research.targets import DEFAULT_MINIMUM_TARGET_CROSS_SECTION, TARG
 from quantlab.research.u100_quality import audit_u100_data
 from quantlab.research.u100_breadth import evaluate_u100_breadth
 from quantlab.research.breadth_study import run_breadth_study, verify_saved_breadth_report
+from quantlab.research.signal_diagnostics import run_signal_diagnostics, write_signal_diagnostics
 
 
 def _safe_ticker(ticker: str) -> str:
@@ -207,6 +208,9 @@ def build_parser() -> argparse.ArgumentParser:
         "breadth-verify", help="reload saved breadth models on their saved development inputs"
     )
     breadth_verify.add_argument("--report", required=True)
+    research_commands.add_parser(
+        "signal-diagnostics", help="post-hoc attribution of the frozen Step 4.5C development experiments; no training"
+    )
 
     model = subparsers.add_parser("model", help="train and inspect research models")
     model_commands = model.add_subparsers(dest="model_command", required=True)
@@ -388,6 +392,12 @@ def _run_research(args) -> None:
                          ensure_ascii=False, indent=2))
     elif args.research_command == "breadth-verify":
         print(json.dumps(verify_saved_breadth_report(Path(args.report)), ensure_ascii=False, indent=2))
+    elif args.research_command == "signal-diagnostics":
+        result = run_signal_diagnostics()
+        outputs = write_signal_diagnostics(result)
+        print(json.dumps({"status": result["payload"]["status"],
+                          "diagnostic_role": result["payload"]["diagnostic_role"], **outputs},
+                         ensure_ascii=False, indent=2))
 
 
 def _run_model(args) -> None:

@@ -374,3 +374,11 @@ Step 4.4 达到停止条件，到此暂停。
 - 按同一三折日期、5-session embargo、实际 label end purge、固定 LightGBM 参数分别运行 U11/U50/U100。三个实验各有独立 ID。U100 Rank IC 三折 −.00291 / +.04668 / −.00857；两折负值，预注册状态 `breadth_not_supported`。共同日期无丢失；U11 anchor-only、均值/动量基线、日/月/季 IC 和 gain/split importance 已记录。
 - 9 个 Fold 的模型使用保存的验证输入重载，预测与日 Rank IC 复现一致。实验结果仅是开发期研究；qfq 非 PIT、当前交易所名单幸存者偏差未解决。详见 [`step_4_5C_breadth_robustness.md`](step_4_5C_breadth_robustness.md)。
 - 新增 12 项离线测试；全套 123/123 通过，`compileall`、`git diff --check` 通过，uv 检查 107 个包兼容。增加 `research breadth-verify` 以复核保存的 9 个模型和固定输入。
+
+## Step 4.6（2026-10-05）
+
+- 检查 Step 4.5C 工作区、123 项测试、编译、diff、依赖、忽略规则和 artifacts 后，建立本地 checkpoint `a307a55 chore: checkpoint step 4.5C universe breadth robustness`；未创建远程或 push。
+- 新增只读 `quantlab research signal-diagnostics`，对固定 U11/U50/U100 的 2018–2023 保存预测、验证输入、模型和治理材料做诊断；9 个 fold 模型与 9 份验证输入哈希核验及重载复现通过。无重新拟合/选股/数据下载。所有输出为 `POST_HOC_DIAGNOSTIC`，17-feature 单因子表为 `EXPLORATORY_UNIVARIATE_DIAGNOSTIC`。
+- 生成 `docs/step_4_6_signal_failure_diagnostics.md` 及本地 JSON/CSV。U100 Rank IC 三折为 -0.00291/+0.04668/-0.00857；2021 正 IC 日比例略高于一半但负值幅度抵消均值，2022 各季度正向但强弱不一，2023 仍为负。不同切片没有给出唯一解释，最终状态 `root_cause_not_identified`。
+- 审计确认当前行业快照分组过窄且不是历史 PIT；1,684 个 no-trade sessions 未进入当前研究样本；五有效观察标签的间隔可拉长，U100 最大日历跨度 150 日。Baseline manifest、旧 U11 快照差异、Legacy Test 与 Sealed Holdout 隔离、qfq 非 PIT 和 survivorship 限制保持记录。
+- 更新 README 与 `docs/project_status.md`。Step 4.6 代码/文档暂留工作区，诊断产物由 `.gitignore` 排除；本阶段结束即暂停，下一阶段不自动启动。

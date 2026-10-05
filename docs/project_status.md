@@ -175,3 +175,11 @@ Step 4.5A 在提交 `eb8d9ec` 建立本地 checkpoint 后，U100 冻结配置通
 ## Step 4.5C — Universe Breadth Robustness（2026-10-05）
 
 在冻结 U11/U50/U100 与当前 BaoStock qfq 数据上，先通过 Dataset Consistency Gate：共有样本的特征、标签、label end 和价格行哈希一致；U100 143,911 条研究样本全部为 `tradestatus=1`。Step 4.3 历史 U11 数据集与本轮当前 U11 数据集存在 46 条旧 no-trade 行、55 条本轮期末无标签行及后续特征/标签差异，旧产物保持不变。固定 Feature v1、Raw Target、Baseline v1 LightGBM 参数和三折时间协议后，U100 Rank IC 为 −0.00291 / +0.04668 / −0.00857，预注册结果 **`breadth_not_supported`**。三池共同有效 IC 日期与原生日期相同；9 个模型均在保存的输入上重载复现。没有使用 Legacy Test、Sealed Holdout 或进行回测。完整报告见 [`step_4_5C_breadth_robustness.md`](step_4_5C_breadth_robustness.md)。
+
+## Step 4.6 — Signal Failure Diagnostics（2026-10-05）
+
+Step 4.5C 已提交为本地 checkpoint `a307a55`（`chore: checkpoint step 4.5C universe breadth robustness`），无 remote/push。对冻结 U11/U50/U100 及 2018–2023 BaoStock qfq development-only 材料进行只读诊断，核验九个已保存 fold 模型与验证输入哈希并复现预测。无训练、行情下载、特征/目标/参数/Universe 修改；2024–2025 Legacy Test 与 2026+ Sealed Holdout 未访问。结论为 `root_cause_not_identified`；所有结果均为 `POST_HOC_DIAGNOSTIC`，17 个固定特征的单因子结果为 `EXPLORATORY_UNIVARIATE_DIAGNOSTIC`。
+
+主要观察：U100 三折 Rank IC 为 -0.00291/+0.04668/-0.00857；2021 正 IC 日比例 53.65% 但负向日幅度较大，2023 负 IC 日占比 51.29%；2022 正向结果分布于多个季度，但强度不均。当前行业快照每组最多 7 只，无法达到预设 8 只组内诊断宽度，且行业标签非历史 PIT。五有效成交观察目标与交易所 session 的间隔在少数样本中显著拉长（U100 最大日历跨度 150 日、最大 session 距离 100）；这不改变既有标签计算正确性，但限制统一持有期解释。Baseline v1 manifest hash、Step 4.3/4.4/4.5C 状态、旧 U11 版本差异、非 PIT 和 survivorship 限制均核对通过。机器结果在被忽略的 `artifacts/reports/signal_failure_diagnostics_20261005T021422Z_83390a3990_final_v2/`；分析和后续建议见 [`step_4_6_signal_failure_diagnostics.md`](step_4_6_signal_failure_diagnostics.md)。
+
+全套 132 项测试通过，`compileall` 与 `git diff --check` 通过；Python 3.14.6，uv 检查 107 个包兼容。新增 Step 4.6 代码和文档尚未提交，本阶段到此停止。
