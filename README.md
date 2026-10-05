@@ -122,7 +122,7 @@ qfq 是 2026-10-04 获取的 BaoStock 供应商快照；历史公司行动信息
 
 Step 4.3 检查点 `636c26f chore: checkpoint step 4.3 walk-forward feature diagnostics` 已在 Step 4.4 前建立；当前 Step 4.4 修改留在工作区。原 Baseline Real Market Experiment v1 保持不变，其 2024–2025 Test Pearson IC `-0.08343`、Rank IC `-0.06794` 仍保留。该区间登记为 `LEGACY_OBSERVED_TEST`，本阶段没有为任何新目标生成 2024 年及以后预测或指标。
 
-新增 `ashare_daily_v2_scale_invariant`，不包含绝对价格/成交量均线或 symbol ID，target 仍为 `target_5d`。在同一 11 股 BaoStock qfq 快照和固定 LightGBM 参数下，使用 2018–2023 的三个 expanding-window folds 对比 v1/v2。每折均按全局日期切分、五期 `label_end_date` purge 和 5-session embargo；v1/v2 验证 sample keys、target 和 label end date 完全相同。完整结果见 [`artifacts/reports/walkforward_comparison_2ee1453e2be5.json`](artifacts/reports/walkforward_comparison_2ee1453e2be5.json)，逐折产物在 `artifacts/experiments/walkforward_*/`。
+新增 `ashare_daily_v2_scale_invariant`，不包含绝对价格/成交量均线或 symbol ID，target 仍为 `target_5d`。在同一 11 股 BaoStock qfq 快照和固定 LightGBM 参数下，使用 2018–2023 的三个 expanding-window folds 对比 v1/v2。每折均按全局日期切分、五期 `label_end_date` purge 和 5-session embargo；v1/v2 验证 sample keys、target 和 label end date 完全相同。完整文字结果见[项目状态记录](docs/project_status.md)；逐折机器产物保存在本地忽略目录 `artifacts/experiments/walkforward_*/`，不会随公开仓库发布。
 
 本轮 v2 误差均值略低（MAE `0.03889` 对 `0.03934`；RMSE `0.05038` 对 `0.05071`），但横截面方向诊断变差：v1 的 fold mean Rank IC 为 `0.05045 / 0.04620 / 0.02500`，v2 为 `-0.00761 / -0.02884 / -0.01516`；正 Rank IC 日比例均值为 `53.08%` 对 `46.91%`。因此 v2 标记 `development_only`，不是候选模型或已验证模型。v1 的跨股票尺度审计发现，MA_5 与每股中位收盘价相关系数 `0.9999998`，Volume_MA20 与每股中位成交量相关系数 `0.9999115`（11 股描述性诊断）。Step 4.3 只做研究诊断，不做参数搜索、策略回测或扩大股票池；详情见 [`docs/project_status.md`](docs/project_status.md)。
 
@@ -132,7 +132,7 @@ Step 4.4 沿用 Feature v1、固定 LightGBM 参数及 2018–2023 三个 expand
 
 在 A∩B∩C 完全相同的验证键上，三折 Rank IC（Raw / Pool Excess / CS Rank）为 `0.05045 / -0.05076 / -0.04663`、`0.04620 / 0.03440 / 0.05600`、`0.02500 / -0.04036 / -0.01877`。跨折均值为 `0.04055 / -0.01891 / -0.00313`，正 Rank IC 日比例为 `53.08% / 46.35% / 48.79%`。两种新目标都未满足预设候选条件，结论为 **`no_target_upgrade`**，保留 Raw Return control。目标构造检查中，Pool Excess 1,452 个有效日期的最大绝对日均值为 `1.77e-17`；CS Rank 对原收益的逐日排序单调一致。
 
-报告为 [`target_comparison_28b36e885c5a.json`](artifacts/reports/target_comparison_28b36e885c5a.json)，逐日目标构造诊断为 `artifacts/reports/target_cross_section_diagnostics_28b36e885c5a.csv`。三个独立实验和带版本的数据集清单均保存在本地 `artifacts/` 与 `data/processed/`，并由 `.gitignore` 排除。测试环境仍是 Python 3.14.6。qfq 是供应商历史快照而非 point-in-time 还原；当前 11 股工程池存在幸存者偏差。没有读取 Legacy Test 或 2026+ Holdout，也没有进行回测、调参或扩大 Universe。
+结果与研究结论记录在[项目状态记录](docs/project_status.md)；逐日诊断、机器报告和数据集清单保存在本地 `artifacts/` 与 `data/processed/`，并由 `.gitignore` 排除，不会随公开仓库发布。测试环境仍是 Python 3.14.6。qfq 是供应商历史快照而非 point-in-time 还原；当前 11 股工程池存在幸存者偏差。没有读取 Legacy Test 或 2026+ Holdout，也没有进行回测、调参或扩大 Universe。
 
 ## Step 4.5：Universe breadth expansion 状态
 
