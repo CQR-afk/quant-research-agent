@@ -74,6 +74,8 @@ def build_research_dataset(
     provider: str | None = None,
     output_path: Path | str | None = None,
     feature_version: str = FEATURE_VERSION,
+    development_only: bool = False,
+    reused_universe_hash: str | None = None,
 ) -> DatasetBuildResult:
     """Create per-security causal features and five-observation labels from DuckDB."""
     root = project_root()
@@ -88,6 +90,9 @@ def build_research_dataset(
     research_end = pd.Timestamp(end or configured_range.get("end") or pool["research_end"]).normalize()
     if research_start > research_end:
         raise ValueError("Research start must be on or before end.")
+    if development_only and (research_start < pd.Timestamp("2018-01-01") or
+                             research_end > pd.Timestamp("2023-12-31")):
+        raise ValueError("Development-only datasets are scoped to 2018-01-01 through 2023-12-31.")
     feature_columns, feature_parameters, builder_type = feature_spec(feature_version)
     if feature_version != FEATURE_VERSION and research_end >= pd.Timestamp("2024-01-01"):
         raise ValueError("The development feature build is sealed at 2023-12-31; later dates are unavailable to this workflow.")
@@ -259,17 +264,27 @@ def build_research_dataset(
         bars = pd.DataFrame(columns=["symbol", "trade_date", "source", "adjustment", "row_hash", "record_version", "ingest_id"])
 
     coverage = pd.DataFrame(coverage_records)
+    snapshot_times = ({
+        str(symbol): pd.to_datetime(group["downloaded_at"], utc=True, errors="coerce").max().isoformat()
+        for symbol, group in bars.groupby("symbol", sort=True)
+        if "downloaded_at" in group and pd.to_datetime(group["downloaded_at"], utc=True, errors="coerce").notna().any()
+    } if len(bars) else {})
     manifest: dict[str, object] = {
         "dataset_id": f"ashare_research_{uuid.uuid4().hex}",
         "created_at_utc": pd.Timestamp.now(tz="UTC").isoformat(),
         "pool_id": pool["pool_id"],
         "universe_hash": pool.get("universe_hash"),
         "parent_universe_hash": pool.get("parent_universe_hash"),
+        "reused_universe_hash": reused_universe_hash,
+        "universe_selection_seed": pool.get("selection_seed"),
+        "candidate_source_hash": pool.get("candidate_source_hash"),
+        "candidate_snapshot_time": pool.get("candidate_snapshot_time"),
         "pool_selection_date": pool["selection_date"],
         "pool_size": len(pool["members"]),
         "symbols_with_data": int(sum(record["rows"] > 0 for record in coverage_records)),
         "research_start": research_start.date().isoformat(),
         "research_end": research_end.date().isoformat(),
+        "development_date_cap": "2023-12-31" if development_only else None,
         "adjustment": adjustment,
         "market": market,
         "price_basis": "canonical_unadjusted_vendor" if adjustment == "none" else "vendor_snapshot_adjusted",
@@ -283,11 +298,8 @@ def build_research_dataset(
         "target": "target_5d = close.shift(-5) / close - 1",
         "target_horizon_observations": 5,
         "target_version": "target_5d_h5_v1",
-        "adjustment_snapshot_time_by_symbol": ({
-            str(symbol): pd.to_datetime(group["downloaded_at"], utc=True, errors="coerce").max().isoformat()
-            for symbol, group in bars.groupby("symbol", sort=True)
-            if "downloaded_at" in group and pd.to_datetime(group["downloaded_at"], utc=True, errors="coerce").notna().any()
-        } if len(bars) else {}),
+        "adjustment_snapshot_time_by_symbol": snapshot_times,
+        "mixed_vendor_snapshot_times": bool(adjustment != "none" and len(set(snapshot_times.values())) > 1),
         "point_in_time_status": "NOT_POINT_IN_TIME" if adjustment != "none" else "UNADJUSTED_VENDOR_SNAPSHOT",
         "point_in_time_limit": "No point-in-time corporate-action reconstruction; provider adjusted history is a vendor snapshot and may be revised. Unadjusted price returns exclude distributions.",
         "research_sample_policy": "BaoStock tradestatus=1 records only; tradestatus=0 retained in raw/provider metadata and excluded from feature/target observations; missing status is Unknown and excluded from research rows.",

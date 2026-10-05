@@ -17,6 +17,25 @@ from quantlab.providers.router import ProviderRouter
 from quantlab.research.calendar import AShareTradingCalendar
 
 
+DEVELOPMENT_END = date(2023, 12, 31)
+DEVELOPMENT_START = date(2018, 1, 1)
+
+
+def _development_range(start: date | None, end: date | None, enabled: bool) -> tuple[date | None, date | None]:
+    """Enforce an explicit development-only cutoff without changing general ingestion."""
+    if not enabled:
+        return start, end
+    scoped_start = start or DEVELOPMENT_START
+    scoped_end = end or DEVELOPMENT_END
+    if scoped_end > DEVELOPMENT_END or scoped_start > DEVELOPMENT_END:
+        raise ValueError("Development-only market data requests are capped at 2023-12-31.")
+    if scoped_start < DEVELOPMENT_START:
+        raise ValueError("Development-only market data requests start no earlier than 2018-01-01.")
+    if scoped_start > scoped_end:
+        raise ValueError("Development-only request start must be on or before its end.")
+    return scoped_start, scoped_end
+
+
 def download_market_data(
     ticker: str,
     *,
@@ -26,7 +45,9 @@ def download_market_data(
     adjustment: str = "qfq",
     provider=None,
     store: MarketDataStore | None = None,
+    development_only: bool = False,
 ) -> dict[str, object]:
+    start, end = _development_range(start, end, development_only)
     if market != "ashare":
         raise ValueError("Step 3 data ingestion currently supports market=ashare only.")
     identity = normalize_ashare_symbol(ticker)
@@ -106,16 +127,31 @@ def update_market_data(
     initial_start: date = date(1990, 1, 1),
     provider=None,
     store: MarketDataStore | None = None,
+    development_only: bool = False,
 ) -> dict[str, object]:
     store = store or MarketDataStore()
     symbol = normalize_ashare_symbol(ticker).symbol
+    if development_only:
+        if start is not None and start < date(2018, 1, 1):
+            raise ValueError("Development-only market data requests start no earlier than 2018-01-01.")
+        end = end or DEVELOPMENT_END
+        if end > DEVELOPMENT_END:
+            raise ValueError("Development-only market data requests are capped at 2023-12-31.")
+        scoped_initial = max(initial_start, date(2018, 1, 1))
+    else:
+        scoped_initial = initial_start
     if start is None and not full_refresh:
-        latest = store.latest_date(symbol, provider.name if provider is not None else "akshare", adjustment)
-        start = max(initial_start, latest - timedelta(days=overlap_days)) if latest else initial_start
+        latest = store.latest_date(
+            symbol, provider.name if provider is not None else "akshare", adjustment,
+            start=date(2018, 1, 1) if development_only else None,
+            end=end if development_only else None,
+        )
+        start = max(scoped_initial, latest - timedelta(days=overlap_days)) if latest else scoped_initial
     elif full_refresh and start is None:
-        start = initial_start
+        start = scoped_initial
     return download_market_data(symbol, market=market, start=start, end=end,
-                                adjustment=adjustment, provider=provider, store=store)
+                                adjustment=adjustment, provider=provider, store=store,
+                                development_only=development_only)
 
 
 def validate_market_data(
@@ -156,8 +192,14 @@ def query_market_data(
     return result
 
 
-def get_data_status(*, store: MarketDataStore | None = None) -> pd.DataFrame:
-    return (store or MarketDataStore()).status()
+def get_data_status(
+    *, store: MarketDataStore | None = None, start: date | None = None, end: date | None = None,
+    symbols: list[str] | tuple[str, ...] | None = None, source: str | None = None,
+    adjustment: str | None = None, development_only: bool = False,
+) -> pd.DataFrame:
+    start, end = _development_range(start, end, development_only)
+    return (store or MarketDataStore()).status(start=start, end=end, symbols=symbols,
+                                                source=source, adjustment=adjustment)
 
 
 def _range_is_complete(
@@ -221,8 +263,10 @@ def download_market_data_routed(
     provider: str = "auto",
     router: ProviderRouter | None = None,
     store: MarketDataStore | None = None,
+    development_only: bool = False,
 ) -> dict[str, object]:
     """Try each configured provider for this complete symbol/range, never splice rows."""
+    start, end = _development_range(start, end, development_only)
     if market != "ashare":
         raise ValueError("A-share provider routing currently supports market=ashare only.")
     identity = normalize_ashare_symbol(ticker)
@@ -244,6 +288,7 @@ def download_market_data_routed(
             outcome = download_market_data(
                 identity.symbol, market=market, start=start, end=end,
                 adjustment=adjustment, provider=candidate.provider, store=store,
+                development_only=development_only,
             )
             outcome["provider"] = name
             attempts.append(outcome)
@@ -273,8 +318,15 @@ def update_market_data_routed(
     initial_start: date = date(1990, 1, 1),
     router: ProviderRouter | None = None,
     store: MarketDataStore | None = None,
+    development_only: bool = False,
 ) -> dict[str, object]:
     """Update using one provider's own overlap window; provider histories stay separate."""
+    if development_only:
+        if start is not None and start < date(2018, 1, 1):
+            raise ValueError("Development-only market data requests start no earlier than 2018-01-01.")
+        end = end or DEVELOPMENT_END
+        if end > DEVELOPMENT_END:
+            raise ValueError("Development-only market data requests are capped at 2023-12-31.")
     router, store = router or ProviderRouter(), store or MarketDataStore()
     identity = normalize_ashare_symbol(ticker)
     candidates = router.candidates(market="CN_A", adjustment=adjustment, provider=provider)
@@ -289,16 +341,22 @@ def update_market_data_routed(
         provider_start = start
         if provider_start is None:
             latest = None if full_refresh else store.latest_date(
-                identity.symbol, candidate.provider.name, adjustment
+                identity.symbol, candidate.provider.name, adjustment,
+                start=date(2018, 1, 1) if development_only else None,
+                end=end if development_only else None,
             )
             provider_start = initial_start if full_refresh or latest is None else max(
-                initial_start, latest - timedelta(days=overlap_days)
+                max(initial_start, date(2018, 1, 1)) if development_only else initial_start,
+                latest - timedelta(days=overlap_days)
             )
+            if development_only and (full_refresh or latest is None):
+                provider_start = max(initial_start, date(2018, 1, 1))
         router.wait_for_provider(candidate)
         try:
             result = download_market_data(
                 identity.symbol, market=market, start=provider_start, end=end,
                 adjustment=adjustment, provider=candidate.provider, store=store,
+                development_only=development_only,
             )
             result["provider"] = candidate.provider.name
             attempts.append(result)
@@ -357,6 +415,7 @@ def download_market_data_batch(
     throttle_seconds: float = 1.5,
     provider=None,
     store: MarketDataStore | None = None,
+    development_only: bool = False,
 ) -> list[dict[str, object]]:
     """Process symbols serially, recording per-symbol outcomes and preserving resume points."""
     if throttle_seconds < 0:
@@ -368,10 +427,12 @@ def download_market_data_batch(
             if update:
                 outcome = update_market_data(ticker, market=market, start=start, end=end,
                                              adjustment=adjustment, full_refresh=full_refresh,
-                                             provider=provider, store=store)
+                                             provider=provider, store=store,
+                                             development_only=development_only)
             else:
                 outcome = download_market_data(ticker, market=market, start=start, end=end,
-                                               adjustment=adjustment, provider=provider, store=store)
+                                               adjustment=adjustment, provider=provider, store=store,
+                                               development_only=development_only)
             outcomes.append(outcome)
         except KeyboardInterrupt:
             raise

@@ -131,3 +131,7 @@ Step 4.5R 已定位到 Python 的 HTTP/HTTPS/ALL 代理指向无响应的本地�
 ## Step 4.5A — Frozen U50 开发期数据状态
 
 Step 4.5A 已完成并通过 U50 data breadth gate（`u50_data_ready`）。冻结 U50 hash 为 `d6dbbb64fb44564efc37304889812b35bcb5ee0b532210722dcd2096a7ae9218`；现有 11 个 anchors 复用本地数据，新增 39 只从 BaoStock 分别获取 none 与 qfq，日期范围严格为 2018-01-01 至 2023-12-31。生成独立数据集 `data/processed/ashare_research_u50_qfq_v1_dev_2018_2023.parquet`，使用 `ashare_daily_v1` 与 `target_5d_h5_v1`，无模型训练。qfq 是供应商调整快照，不是 point-in-time；Security Master 的当前名单仍有幸存者偏差。逐股复权口径、快照时间、数据缺口和宽度指标见 [`docs/step_4_5A_u50_data_validation.md`](docs/step_4_5A_u50_data_validation.md)。
+
+## Step 4.5B — Frozen U100 开发期数据状态
+
+Step 4.5B 已通过 U100 数据质量与 breadth gate（`u100_data_ready`）。U100 冻结 hash 为 `05278729087acebc4bddc201f4f0f03068b5781b0c1b56e9377bbd14cecd37e9`，仍为 SSE/SZSE 各 50 只，U50 全部复用、只回填 50 只新增成员。BaoStock none/qfq 两个任务分别 50/50 完成，范围严格为 2018-01-01 至 2023-12-31。有效研究观察 143,911 条；1,684 个 session 为供应商明确报告的 no-trade，缺响应和 unknown gap 均为 0。新数据集 `data/processed/ashare_research_u100_qfq_v1_dev_2018_2023.parquet` 包含 100/100 股票的完整特征和有效目标；1,393 个活动日期中，100% 达到 80 股宽度，96.84% 达到 90 股宽度。qfq 是 100 个不同采集时点的 BaoStock 快照，`mixed_vendor_snapshot_times=true`，不是 point-in-time。未训练模型或运行回测。逐股质量、状态语义、限制和复现命令见 [`docs/step_4_5B_u100_data_validation.md`](docs/step_4_5B_u100_data_validation.md)。

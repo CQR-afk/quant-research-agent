@@ -13,7 +13,7 @@ import requests
 from quantlab.data.adjusted import build_adjusted_price_view
 from quantlab.data.backfill import backfill_market_data
 from quantlab.data.reconciliation import reconcile_providers
-from quantlab.data.service import download_market_data, download_market_data_routed, query_market_data
+from quantlab.data.service import download_market_data, download_market_data_routed, get_data_status, query_market_data
 from quantlab.data.store import MarketDataStore
 from quantlab.providers.baostock import BaoStockProvider
 from quantlab.providers.capabilities import ProviderCapabilities
@@ -170,6 +170,39 @@ class MultiProviderTests(unittest.TestCase):
         self.assertEqual(bars.volume.iloc[0], 10000)
         metadata = provider.normalize_provider_metadata(raw, "000001.SZ")
         self.assertIn('"tradestatus": "1"', metadata.metadata_json.iloc[0])
+
+    def test_development_scope_rejects_post_2023_before_provider_or_store_io(self):
+        provider = FakeProvider()
+        store = MarketDataStore(self.temp)
+        with self.assertRaisesRegex(ValueError, "capped at 2023-12-31"):
+            download_market_data("000532.SZ", start=date(2023, 1, 1), end=date(2024, 1, 2),
+                                 provider=provider, store=store, development_only=True)
+        self.assertFalse(hasattr(provider, "symbol"))
+        with self.assertRaisesRegex(ValueError, "capped at 2023-12-31"):
+            backfill_market_data(
+                universe=Path(__file__).resolve().parents[1] /
+                    "config/ashare_universe_breadth_100_additions_2018_2023_v1.json",
+                start=date(2018, 1, 1), end=date(2024, 1, 2), provider="baostock",
+                store=store, development_only=True,
+            )
+        with self.assertRaisesRegex(ValueError, "start no earlier than 2018-01-01"):
+            download_market_data("000532.SZ", start=date(2017, 12, 31), end=date(2023, 12, 31),
+                                 provider=provider, store=store, development_only=True)
+        with store._connect() as con:
+            self.assertEqual(con.execute("SELECT count(*) FROM ingest_runs").fetchone()[0], 0)
+
+    def test_market_status_aggregates_only_the_requested_development_dates(self):
+        store = MarketDataStore(self.temp)
+        provider = FakeProvider()
+        bars = provider.normalize_raw_daily_bars(provider.fetch_raw_daily_bars("000001.SZ"), "000001.SZ", "none")
+        bars["trade_date"] = [date(2023, 12, 29), date(2024, 1, 2)]
+        store.merge_validated(bars)
+        status = get_data_status(start=date(2018, 1, 1), end=date(2023, 12, 31),
+                                 symbols=["000001.SZ"], source="fake", adjustment="none", store=store,
+                                 development_only=True)
+        self.assertEqual(len(status), 1)
+        self.assertEqual(status.iloc[0].row_count, 1)
+        self.assertEqual(status.iloc[0].latest_date.date(), date(2023, 12, 29))
 
     def test_baostock_transient_sdk_failure_retries_and_restores_socket_timeout(self):
         class TransientBaoSDK(FakeBaoSDK):

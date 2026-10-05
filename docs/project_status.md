@@ -165,3 +165,9 @@ Step 4.4 检查点 `c4ca573 chore: checkpoint step 4.4 cross-sectional target st
 ## Step 4.5A — Frozen U50 Historical Backfill（2026-10-05）
 
 状态为 `u50_data_ready`（仅数据工程）。先在 `1edd013` 建立 Step 4.5R.2 本地检查点；冻结 U50 hash 与 U11 anchor 未变化。BaoStock 0.9.4 对 39 个新增成员分开完成 none/qfq 回填，U11 的 11 个 anchor 只读复用。完整的 `ashare_daily_v1` / `target_5d_h5_v1` development-only 数据集为 71,622 行，50/50 股票具备有效特征与标签；train/validation 为 56,072 / 11,850 行，breadth gate 通过。qfq 快照非 PIT；幸存者偏差未解决。未训练模型、未访问实际 Legacy Test 或 2026+ Holdout。逐股质量、每年覆盖、CLI、环境与范围偏差见 [`step_4_5A_u50_data_validation.md`](step_4_5A_u50_data_validation.md)。本阶段代码和报告尚未提交。
+
+## Step 4.5B — Frozen U100 开发期数据状态（2026-10-05）
+
+Step 4.5A 在提交 `eb8d9ec` 建立本地 checkpoint 后，U100 冻结配置通过成员数、SSE/SZSE 分布、U50/U11 包含关系、重复项、candidate source hash、selection seed 与顺序校验。只对 U100−U50 新增的 50 只进行 BaoStock none/qfq 回填，两个独立 job 均 50/50 完成；日期范围为 2018-01-01 至 2023-12-31。U100 quality 与 breadth gate 为 `u100_data_ready`，新增开发期数据集有 143,911 行；完整 Feature+Target 有 137,511 行。活动日期横截面 min/P10/median/P90/max 为 83/98/99/100/100，达到至少 80 只和 90 只的活动日期比例分别为 100% 和 96.84%。
+
+质量汇总每种 adjustment 有 143,911 个实际成交观察、1,684 个 BaoStock 明确报告的 no-trade session、0 个 provider-response 缺失和 0 个 unknown gap。旧 canonical 层保留 961 条与当前 no-trade 状态重叠的历史 bars，但它们不计作当前成交观察且被研究数据集过滤；没有删除旧行情。qfq 为逐股不同时间获取的供应商快照，标记 `mixed_vendor_snapshot_times=true`、`NOT_POINT_IN_TIME`；幸存者偏差仍未解决。日期查询与研究入口均被限制到开发期边界，不读取 Legacy Test 或 Sealed Holdout。本阶段没有训练模型、walk-forward 或回测。Python 3.14.6，111 项自动化测试通过，uv 检查的 107 个包兼容。详细逐股质量和命令见 [`step_4_5B_u100_data_validation.md`](step_4_5B_u100_data_validation.md)。Step 4.5B 代码、配置和文档仍在工作区，未提交。

@@ -118,6 +118,23 @@ class U50DataGateTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "sealed at 2023-12-31"):
             evaluate_u50_breadth(dataset, coverage, start="2023-01-01", end="2024-01-01")
 
+    def test_dataset_builder_development_scope_rejects_post_2023_before_query(self):
+        pool_path = self.temp / "pool.json"
+        pool_path.write_text(json.dumps({
+            "pool_id": "fixture", "selection_date": "2026-10-05", "research_start": "2024-01-01",
+            "research_end": "2024-01-02", "survivorship_bias_note": "fixture",
+            "members": [{"symbol": "600001.SH", "exchange": "SSE"}],
+        }), encoding="utf-8")
+        config_path = self.temp / "research.json"
+        config_path.write_text(json.dumps({"adjustment": "qfq", "provider": "baostock",
+            "date_range": {"start": "2024-01-01", "end": "2024-01-02"},
+            "maximum_missing_session_ratio": 0.02}), encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "Development-only datasets are scoped"):
+            build_research_dataset(pool_path=pool_path, research_config_path=config_path,
+                                   output_path=self.temp / "should-not-exist.parquet",
+                                   development_only=True)
+        self.assertFalse((self.temp / "should-not-exist.parquet").exists())
+
 
 if __name__ == "__main__":
     unittest.main()

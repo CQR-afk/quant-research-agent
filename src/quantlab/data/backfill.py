@@ -15,6 +15,9 @@ from quantlab.data.symbols import normalize_ashare_symbol
 from quantlab.providers.router import ProviderRouter
 
 
+DEVELOPMENT_END = date(2023, 12, 31)
+
+
 def _project_root() -> Path:
     return Path(__file__).resolve().parents[3]
 
@@ -31,6 +34,7 @@ def backfill_market_data(
     router: ProviderRouter | None = None,
     store: MarketDataStore | None = None,
     throttle_seconds: float | None = None,
+    development_only: bool = False,
 ) -> dict[str, object]:
     """Process at most one small batch; completed symbols are never re-requested.
 
@@ -38,6 +42,11 @@ def backfill_market_data(
     deliberately left to single-symbol download requests, avoiding a silent
     cross-provider pool merge.
     """
+    if development_only:
+        if start < date(2018, 1, 1):
+            raise ValueError("Development-only backfill starts no earlier than 2018-01-01.")
+        if end > DEVELOPMENT_END or start > DEVELOPMENT_END:
+            raise ValueError("Development-only backfill requests are capped at 2023-12-31.")
     if start > end:
         raise ValueError("Backfill start must be on or before end.")
     if adjustment not in {"none", "qfq", "hfq"}:
@@ -100,7 +109,8 @@ def backfill_market_data(
         router.wait_for_provider(chosen)
         try:
             result = download_market_data(symbol, market="ashare", start=start, end=end,
-                                          adjustment=adjustment, provider=chosen.provider, store=store)
+                                          adjustment=adjustment, provider=chosen.provider, store=store,
+                                          development_only=development_only)
             succeeded = result["status"] in {"success", "skipped"}
             result_status = "completed" if succeeded else "failed"
             if succeeded:
@@ -146,5 +156,25 @@ def backfill_market_data(
     }
 
 
-def backfill_status(*, store: MarketDataStore | None = None) -> pd.DataFrame:
-    return (store or MarketDataStore()).backfill_jobs_status()
+def backfill_status(
+    *, store: MarketDataStore | None = None, universe: Path | str | None = None,
+    start: date | None = None, end: date | None = None,
+    adjustment: str | None = None, provider: str | None = None,
+    development_only: bool = False,
+) -> pd.DataFrame:
+    if development_only:
+        if start is not None and start < date(2018, 1, 1):
+            raise ValueError("Development-only status starts no earlier than 2018-01-01.")
+        start = start or date(2018, 1, 1)
+        end = end or DEVELOPMENT_END
+        if end > DEVELOPMENT_END:
+            raise ValueError("Development-only status is capped at 2023-12-31.")
+    universe_path = None
+    if universe is not None:
+        path = Path(universe)
+        if not path.is_absolute():
+            path = _project_root() / path
+        universe_path = str(path.resolve())
+    return (store or MarketDataStore()).backfill_jobs_status(
+        universe_path=universe_path, start=start, end=end, adjustment=adjustment, provider=provider,
+    )

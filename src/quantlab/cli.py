@@ -6,6 +6,9 @@ import argparse
 import json
 import re
 from datetime import date, datetime, timezone
+from pathlib import Path
+
+import pandas as pd
 
 from quantlab.config import settings
 from quantlab.market_data import download_daily_prices
@@ -27,6 +30,8 @@ from quantlab.research.walk_forward import run_walk_forward_experiment
 from quantlab.research.features import FEATURE_VERSION, FEATURE_V2_VERSION
 from quantlab.research.target_study import run_target_study
 from quantlab.research.targets import DEFAULT_MINIMUM_TARGET_CROSS_SECTION, TARGET_VERSIONS
+from quantlab.research.u100_quality import audit_u100_data
+from quantlab.research.u100_breadth import evaluate_u100_breadth
 
 
 def _safe_ticker(ticker: str) -> str:
@@ -89,11 +94,19 @@ def build_parser() -> argparse.ArgumentParser:
         item.add_argument("--end", type=_parse_date, default=None)
         item.add_argument("--adjustment", choices=("none", "qfq", "hfq"), default="none")
         item.add_argument("--provider", default="auto", help="provider name or auto")
+        item.add_argument("--development-only", action="store_true",
+                          help="cap this request and any incremental status query at 2023-12-31")
         if command == "update":
             item.add_argument("--full-refresh", action="store_true")
         if command == "query":
             item.set_defaults(ticker=None)
-    data_commands.add_parser("status", help="show locally stored market-data status")
+    status_parser = data_commands.add_parser("status", help="show locally stored market-data status")
+    status_parser.add_argument("--universe", default=None)
+    status_parser.add_argument("--start", type=_parse_date, default=None)
+    status_parser.add_argument("--end", type=_parse_date, default=None)
+    status_parser.add_argument("--provider", default=None)
+    status_parser.add_argument("--adjustment", choices=("none", "qfq", "hfq"), default=None)
+    status_parser.add_argument("--development-only", action="store_true")
     data_commands.add_parser("providers", help="show provider availability and capabilities")
     backfill = data_commands.add_parser("backfill", help="run one resumable historical-data batch")
     backfill.add_argument("--market", choices=("ashare",), default="ashare")
@@ -104,7 +117,15 @@ def build_parser() -> argparse.ArgumentParser:
     backfill.add_argument("--provider", default="auto")
     backfill.add_argument("--retry-failed-only", action="store_true")
     backfill.add_argument("--limit", type=int, default=None)
-    data_commands.add_parser("backfill-status", help="show resumable backfill jobs")
+    backfill.add_argument("--development-only", action="store_true",
+                          help="reject backfills beyond 2023-12-31")
+    backfill_status_parser = data_commands.add_parser("backfill-status", help="show resumable backfill jobs")
+    backfill_status_parser.add_argument("--universe", default=None)
+    backfill_status_parser.add_argument("--start", type=_parse_date, default=None)
+    backfill_status_parser.add_argument("--end", type=_parse_date, default=None)
+    backfill_status_parser.add_argument("--adjustment", choices=("none", "qfq", "hfq"), default=None)
+    backfill_status_parser.add_argument("--provider", default=None)
+    backfill_status_parser.add_argument("--development-only", action="store_true")
     adjusted_view = data_commands.add_parser("adjusted-view", help="read one provider's stored price basis and provenance")
     adjusted_view.add_argument("--ticker", required=True)
     adjusted_view.add_argument("--start", type=_parse_date, default=None)
@@ -138,6 +159,12 @@ def build_parser() -> argparse.ArgumentParser:
     build_dataset.add_argument("--provider", default=None)
     build_dataset.add_argument("--universe", default=None)
     build_dataset.add_argument("--output", default=None, help="optional output Parquet path")
+    build_dataset.add_argument("--development-only", action="store_true",
+                               help="reject dataset scopes beyond 2023-12-31")
+    build_dataset.add_argument("--reused-universe-hash", default=None,
+                               help="record the frozen parent universe reused for this dataset")
+    build_dataset.add_argument("--summary-only", action="store_true",
+                               help="omit the per-symbol coverage table from terminal output")
     build_dataset.add_argument("--feature-version", choices=(FEATURE_VERSION, FEATURE_V2_VERSION), default=FEATURE_VERSION)
     research_commands.add_parser("dataset-status", help="show model-ready dataset coverage and lineage")
     readiness = research_commands.add_parser("readiness", help="evaluate the data gate without fitting a model")
@@ -158,6 +185,20 @@ def build_parser() -> argparse.ArgumentParser:
     target_study.add_argument("--target-version", required=True, choices=("all", *TARGET_VERSIONS))
     target_study.add_argument("--minimum-target-cross-section", type=int,
                                default=DEFAULT_MINIMUM_TARGET_CROSS_SECTION)
+    u100_quality = research_commands.add_parser(
+        "u100-quality", help="audit frozen U100 none/qfq data in a date-bounded development scope"
+    )
+    u100_quality.add_argument("--universe", default="config/ashare_universe_breadth_100.json")
+    u100_quality.add_argument("--start", type=_parse_date, default=date(2018, 1, 1))
+    u100_quality.add_argument("--end", type=_parse_date, default=date(2023, 12, 31))
+    u100_quality.add_argument("--output-csv", default="data/processed/ashare_u100_symbol_quality_2018_2023.csv")
+    u100_quality.add_argument("--output-json", default="data/processed/ashare_u100_data_quality_2018_2023.json")
+    u100_breadth = research_commands.add_parser(
+        "u100-breadth", help="evaluate the fixed development-only U100 breadth gate"
+    )
+    u100_breadth.add_argument("--dataset", required=True)
+    u100_breadth.add_argument("--manifest", default=None)
+    u100_breadth.add_argument("--output", default="data/processed/ashare_u100_breadth_gate_2018_2023.json")
 
     model = subparsers.add_parser("model", help="train and inspect research models")
     model_commands = model.add_subparsers(dest="model_command", required=True)
@@ -184,7 +225,16 @@ def _parse_date(value: str) -> date:
 
 def _run_data(args) -> None:
     if args.data_command == "status":
-        print(get_data_status().to_string(index=False))
+        symbols = None
+        if args.universe:
+            universe_path = Path(args.universe)
+            if not universe_path.is_absolute():
+                universe_path = Path(__file__).resolve().parents[2] / universe_path
+            universe_payload = json.loads(universe_path.read_text(encoding="utf-8-sig"))
+            symbols = [str(member["symbol"]) for member in universe_payload.get("members", [])]
+        print(get_data_status(start=args.start, end=args.end, symbols=symbols,
+                              source=args.provider, adjustment=args.adjustment,
+                              development_only=args.development_only).to_string(index=False))
     elif args.data_command in {"download", "update"}:
         router = ProviderRouter()
         outcomes = []
@@ -193,11 +243,12 @@ def _run_data(args) -> None:
                 outcomes.append(update_market_data_routed(
                     ticker, market=args.market, start=args.start, end=args.end, adjustment=args.adjustment,
                     provider=args.provider, full_refresh=args.full_refresh, router=router,
+                    development_only=args.development_only,
                 ))
             else:
                 outcomes.append(download_market_data_routed(
                     ticker, market=args.market, start=args.start, end=args.end, adjustment=args.adjustment,
-                    provider=args.provider, router=router,
+                    provider=args.provider, router=router, development_only=args.development_only,
                 ))
         for result in outcomes:
             printable = {key: value for key, value in result.items() if key != "issues"}
@@ -219,10 +270,14 @@ def _run_data(args) -> None:
     elif args.data_command == "backfill":
         result = backfill_market_data(universe=args.universe, start=args.start, end=args.end,
                                       adjustment=args.adjustment, provider=args.provider,
-                                      retry_failed_only=args.retry_failed_only, limit=args.limit)
+                                      retry_failed_only=args.retry_failed_only, limit=args.limit,
+                                      development_only=args.development_only)
         print(json.dumps(result, ensure_ascii=False, default=str, indent=2))
     elif args.data_command == "backfill-status":
-        print(backfill_status().to_json(orient="records", force_ascii=False, date_format="iso", indent=2))
+        print(backfill_status(universe=args.universe, start=args.start, end=args.end,
+                              adjustment=args.adjustment, provider=args.provider,
+                              development_only=args.development_only).to_json(
+                                  orient="records", force_ascii=False, date_format="iso", indent=2))
     elif args.data_command == "adjusted-view":
         result = build_adjusted_price_view(args.ticker, args.start, args.end, args.adjustment, args.provider)
         print(result.to_json(orient="records", force_ascii=False, date_format="iso", indent=2))
@@ -242,10 +297,16 @@ def _run_research(args) -> None:
     if args.research_command == "build-dataset":
         result = build_research_dataset(start=args.start, end=args.end, adjustment=args.adjustment,
                                         provider=args.provider, pool_path=args.universe, output_path=args.output,
-                                        feature_version=args.feature_version)
-        print(json.dumps({"dataset_path": str(result.dataset_path), "manifest_path": str(result.manifest_path),
-                          "manifest": {key: value for key, value in result.manifest.items() if key != "coverage"},
-                          "coverage": result.coverage.to_dict("records")}, ensure_ascii=False, default=str, indent=2))
+                                        feature_version=args.feature_version,
+                                        development_only=args.development_only,
+                                        reused_universe_hash=args.reused_universe_hash)
+        payload = {"dataset_path": str(result.dataset_path), "manifest_path": str(result.manifest_path),
+                   "manifest": {key: value for key, value in result.manifest.items() if key != "coverage"}}
+        if args.summary_only:
+            payload["coverage_symbols"] = int(result.coverage["symbol"].nunique()) if not result.coverage.empty else 0
+        else:
+            payload["coverage"] = result.coverage.to_dict("records")
+        print(json.dumps(payload, ensure_ascii=False, default=str, indent=2))
     elif args.research_command == "dataset-status":
         result = dataset_status()
         if result.get("status") == "available":
@@ -280,6 +341,36 @@ def _run_research(args) -> None:
             "report_path": result["report_path"],
             "candidate_assessment": result["candidate_assessment"],
         }, ensure_ascii=False, default=str, indent=2))
+    elif args.research_command == "u100-quality":
+        quality, summary = audit_u100_data(universe_path=args.universe, start=args.start, end=args.end)
+        csv_path, json_path = Path(args.output_csv), Path(args.output_json)
+        csv_path.parent.mkdir(parents=True, exist_ok=True)
+        json_path.parent.mkdir(parents=True, exist_ok=True)
+        quality.to_csv(csv_path, index=False, encoding="utf-8-sig")
+        json_path.write_text(json.dumps(summary, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
+        print(json.dumps({**{key: value for key, value in summary.items() if key != "per_symbol_snapshot_times"},
+                          "quality_csv": str(csv_path), "quality_json": str(json_path)},
+                         ensure_ascii=False, default=str, indent=2))
+    elif args.research_command == "u100-breadth":
+        dataset_path = Path(args.dataset)
+        manifest_path = Path(args.manifest) if args.manifest else dataset_path.with_suffix(".manifest.json")
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        frame = pd.read_parquet(dataset_path)
+        report = evaluate_u100_breadth(frame, pd.DataFrame(manifest.get("coverage", [])),
+                                       start=manifest["research_start"], end=manifest["research_end"])
+        report["dataset_path"] = str(dataset_path)
+        report["dataset_sha256"] = manifest.get("dataset_sha256")
+        report["universe_hash"] = manifest.get("universe_hash")
+        report["feature_version"] = manifest.get("feature_version")
+        report["target_version"] = manifest.get("target_version")
+        report["provider"] = manifest.get("provider")
+        report["adjustment"] = manifest.get("adjustment")
+        report["mixed_vendor_snapshot_times"] = True
+        output = Path(args.output)
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(json.dumps(report, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
+        print(json.dumps({key: value for key, value in report.items() if key != "coverage_by_symbol"},
+                         ensure_ascii=False, default=str, indent=2))
 
 
 def _run_model(args) -> None:

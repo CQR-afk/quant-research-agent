@@ -356,3 +356,12 @@ Step 4.4 达到停止条件，到此暂停。
 - Pilot：冻结顺序首 3 个新增 symbol 的 none/qfq 均成功，重复请求均跳过。之后 39 个新增成员的两个回填 job 均 39/39 完成；U11 anchors 无新行情请求。每个口径有 4 次初始校验拒绝（12 行，均为 `tradestatus=0` 的空量额），在保留 raw 后按已验证 no-trade 规则重试成功。
 - 完成 U50 逐股/年度行情覆盖检查与 qfq development-only 数据集。71,622 行，68,672 完整特征，71,372 有效标签；train/validation 56,072/11,850；宽度门禁通过。qfq 的 50 个证券快照时间各不相同，仍标记 NOT_POINT_IN_TIME。
 - 自动化测试 106/106 通过，`compileall`、`git diff --check` 通过，Python 3.14.6 环境 `uv pip check` 检查 107 个包兼容。未训练模型，未访问实际 Legacy Test 或 Sealed Holdout。一次初始预检聚合查询读取了旧 U11 记录的 max-date 元数据（至 2025-12-31），未读取/分析其 OHLC、收益或指标；之后的 U50 数据查询和数据集严格截止 2023-12-31。完整记录：[`step_4_5A_u50_data_validation.md`](step_4_5A_u50_data_validation.md)。
+
+## Step 4.5B（2026-10-05）
+
+- 先以 `eb8d9ec chore: checkpoint step 4.5A U50 historical data readiness` 保存 Step 4.5A；没有 push。验证正式冻结 U100=100（SSE/SZSE 各 50）、U50=50（各 25）、U11 anchors 全部保留、无重复且 frozen selection metadata/hash 不变。新增任务配置仅列 U100−U50 的 50 个 additions。
+- 依 frozen order 先完成 3 只 none/qfq pilot，再分批回填新增成员。BaoStock none 与 qfq 使用隔离 job，各 50/50 完成；`603900.SH` 的有界请求失败后暂停批次并仅重试该证券，之后成功。U50 历史数据复用，没有重复下载。
+- 对 U100 两种 adjustment、200 个证券口径分区执行 2018–2023 质量审计。每种口径按交易所 sessions 统计 145,595 expected、143,911 actual trading observations、1,684 provider-reported no-trade、0 missing response、0 unknown gaps。961 条较早 canonical bars 与当前 no-trade 元数据重叠，保留在库但不计为成交观察，研究集按 `tradestatus=1` 筛选。未合成量价字段或推断停牌原因。
+- 构建独立 qfq development dataset：143,911 行、100/100 完整 feature 与有效 target 股票、137,511 行同时有完整 Feature/Target；SHA-256 为 `1814347050b9a35d23148f72a52355f40523ab699fdb1f5d9a2a4c76f1d1cf02`。逐股 qfq snapshot 时间不同，标记 `mixed_vendor_snapshot_times=true` / `NOT_POINT_IN_TIME`。
+- U100 breadth gate：1,393 活动日期的 min/P10/median/P90/max=83/98/99/100/100；≥80 宽度覆盖 100%，≥90 覆盖 96.84%；状态 `u100_data_ready`。修改含 service/backfill/store/dataset/CLI 的显式 development date cap，并添加 U100 quality、breadth 与边界测试。
+- 全套 111 项测试通过，`compileall`、`git diff --check` 通过；Python 3.14.6，uv 检查 107 个包兼容。无训练、walk-forward、回测、Legacy Test 或 Sealed Holdout 评估。逐股证据和命令见 [`step_4_5B_u100_data_validation.md`](step_4_5B_u100_data_validation.md)。Step 4.5B 文件尚未提交。

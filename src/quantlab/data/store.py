@@ -100,9 +100,22 @@ class MarketDataStore:
             con.register("issue_rows", frame)
             con.execute("INSERT INTO validation_issues SELECT ingest_id, symbol, row_index, issue_type, detail FROM issue_rows")
 
-    def latest_date(self, symbol: str, source: str = "akshare", adjustment: str = "qfq") -> date | None:
+    def latest_date(
+        self, symbol: str, source: str = "akshare", adjustment: str = "qfq", *,
+        start: date | None = None, end: date | None = None,
+    ) -> date | None:
+        clauses = ["symbol=?", "source=?", "adjustment=?"]
+        params: list[object] = [symbol, source, adjustment]
+        if start is not None:
+            clauses.append("trade_date >= ?")
+            params.append(start)
+        if end is not None:
+            clauses.append("trade_date <= ?")
+            params.append(end)
         with self._connect() as con:
-            row = con.execute("SELECT max(trade_date) FROM market_bars WHERE symbol=? AND source=? AND adjustment=?", [symbol, source, adjustment]).fetchone()
+            row = con.execute(
+                "SELECT max(trade_date) FROM market_bars WHERE " + " AND ".join(clauses), params
+            ).fetchone()
         return row[0]
 
     def merge_validated(self, bars: pd.DataFrame, provider_metadata: pd.DataFrame | None = None) -> int:
@@ -231,9 +244,34 @@ class MarketDataStore:
         with self._connect() as con:
             return con.execute(sql, params).df()
 
-    def status(self) -> pd.DataFrame:
+    def status(
+        self, *, start: date | None = None, end: date | None = None,
+        symbols: list[str] | tuple[str, ...] | None = None,
+        source: str | None = None, adjustment: str | None = None,
+    ) -> pd.DataFrame:
+        if symbols is not None and not symbols:
+            return pd.DataFrame(columns=["market", "exchange", "symbol", "source", "adjustment",
+                                         "start_date", "latest_date", "row_count"])
+        clauses: list[str] = []
+        params: list[object] = []
+        for column, value in (("trade_date >=", start), ("trade_date <=", end),
+                              ("source", source), ("adjustment", adjustment)):
+            if value is not None:
+                if column.startswith("trade_date"):
+                    clauses.append(f"{column} ?")
+                else:
+                    clauses.append(f"{column}=?")
+                params.append(value)
+        if symbols is not None:
+            clauses.append("symbol IN (" + ",".join("?" for _ in symbols) + ")")
+            params.extend(symbols)
+        where = " WHERE " + " AND ".join(clauses) if clauses else ""
         with self._connect() as con:
-            return con.execute("SELECT market, exchange, symbol, source, adjustment, min(trade_date) start_date, max(trade_date) latest_date, count(*) AS row_count FROM market_bars GROUP BY ALL ORDER BY market, symbol, source, adjustment").df()
+            return con.execute(
+                "SELECT market, exchange, symbol, source, adjustment, min(trade_date) start_date, "
+                "max(trade_date) latest_date, count(*) AS row_count FROM market_bars" + where +
+                " GROUP BY ALL ORDER BY market, symbol, source, adjustment", params
+            ).df()
 
     def validation_issues(self, symbol: str, ingest_id: str | None = None) -> pd.DataFrame:
         sql = "SELECT * FROM validation_issues WHERE symbol=?"
@@ -380,7 +418,18 @@ class MarketDataStore:
             """, [status, provider, started, status, row_count, error, job_id, symbol])
             con.execute("UPDATE backfill_jobs SET updated_at=current_timestamp WHERE job_id=?", [job_id])
 
-    def backfill_jobs_status(self) -> pd.DataFrame:
+    def backfill_jobs_status(
+        self, *, universe_path: str | None = None, start: date | None = None, end: date | None = None,
+        adjustment: str | None = None, provider: str | None = None,
+    ) -> pd.DataFrame:
+        clauses: list[str] = []
+        params: list[object] = []
+        for column, value in (("j.universe_path", universe_path), ("j.requested_start", start),
+                              ("j.requested_end", end), ("j.adjustment", adjustment), ("j.provider", provider)):
+            if value is not None:
+                clauses.append(f"{column}=?")
+                params.append(value)
+        where = " WHERE " + " AND ".join(clauses) if clauses else ""
         with self._connect() as con:
             return con.execute("""
                 SELECT j.job_id, j.universe_path, j.requested_start, j.requested_end,
@@ -390,6 +439,7 @@ class MarketDataStore:
                        count(*) FILTER (WHERE i.status='failed') failed,
                        count(*) FILTER (WHERE i.status IN ('pending','running')) pending
                 FROM backfill_jobs j LEFT JOIN backfill_items i USING (job_id)
+            """ + where + """
                 GROUP BY ALL ORDER BY j.created_at DESC
-            """).df()
+            """, params).df()
 
