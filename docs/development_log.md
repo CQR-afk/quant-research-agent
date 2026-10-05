@@ -365,3 +365,12 @@ Step 4.4 达到停止条件，到此暂停。
 - 构建独立 qfq development dataset：143,911 行、100/100 完整 feature 与有效 target 股票、137,511 行同时有完整 Feature/Target；SHA-256 为 `1814347050b9a35d23148f72a52355f40523ab699fdb1f5d9a2a4c76f1d1cf02`。逐股 qfq snapshot 时间不同，标记 `mixed_vendor_snapshot_times=true` / `NOT_POINT_IN_TIME`。
 - U100 breadth gate：1,393 活动日期的 min/P10/median/P90/max=83/98/99/100/100；≥80 宽度覆盖 100%，≥90 覆盖 96.84%；状态 `u100_data_ready`。修改含 service/backfill/store/dataset/CLI 的显式 development date cap，并添加 U100 quality、breadth 与边界测试。
 - 全套 111 项测试通过，`compileall`、`git diff --check` 通过；Python 3.14.6，uv 检查 107 个包兼容。无训练、walk-forward、回测、Legacy Test 或 Sealed Holdout 评估。逐股证据和命令见 [`step_4_5B_u100_data_validation.md`](step_4_5B_u100_data_validation.md)。Step 4.5B 文件尚未提交。
+
+## Step 4.5C（2026-10-05）
+
+- 在完成 111 项测试、编译、diff、依赖与冻结哈希检查后，本地提交 Step 4.5B checkpoint `bb66b9a`；未 push。
+- 用当前 `tradestatus=1` 规则生成独立 U11 development dataset。三池一致性检查通过；U11⊂U50⊂U100 的共有样本、17 个 Feature、Raw Target、label end、价格行哈希一致。U100 143,911 条样本全是有效成交观察，1,684 个 provider no-trade session 未进入数据集。
+- Step 4.3 历史 U11 快照保留：旧独有 46 条均为当前 provider no-trade，新 U11 独有 55 条为 11 股各 5 条无标签期末行；共同键的部分滚动特征和 25 个 target/label end 不同。未覆盖历史模型、预测或报告。
+- 按同一三折日期、5-session embargo、实际 label end purge、固定 LightGBM 参数分别运行 U11/U50/U100。三个实验各有独立 ID。U100 Rank IC 三折 −.00291 / +.04668 / −.00857；两折负值，预注册状态 `breadth_not_supported`。共同日期无丢失；U11 anchor-only、均值/动量基线、日/月/季 IC 和 gain/split importance 已记录。
+- 9 个 Fold 的模型使用保存的验证输入重载，预测与日 Rank IC 复现一致。实验结果仅是开发期研究；qfq 非 PIT、当前交易所名单幸存者偏差未解决。详见 [`step_4_5C_breadth_robustness.md`](step_4_5C_breadth_robustness.md)。
+- 新增 12 项离线测试；全套 123/123 通过，`compileall`、`git diff --check` 通过，uv 检查 107 个包兼容。增加 `research breadth-verify` 以复核保存的 9 个模型和固定输入。

@@ -124,9 +124,9 @@ Step 4.4 沿用 Feature v1、固定 LightGBM 参数及 2018–2023 三个 expand
 
 ## Step 4.5：Universe breadth expansion 状态
 
-Step 4.4 本地检查点为 `c4ca573 chore: checkpoint step 4.4 cross-sectional target study`。Step 4.5 已检查本地数据 Provider，但候选元数据请求受网络代理错误阻断：BaoStock 登录成功后全量基本资料/行业查询未返回记录，AKShare 交易所股票列表返回 `ProxyError`。因此没有冻结 U50/U100、下载任何新行情或运行新增模型实验；U11 control 保持原样。详细执行证据与恢复条件见 [`docs/step_4_5_universe_expansion.md`](docs/step_4_5_universe_expansion.md)。当前不能对 breadth 支持性作研究结论。
+Step 4.4 本地检查点为 `c4ca573 chore: checkpoint step 4.4 cross-sectional target study`。Step 4.5 最初受网络代理阻断：BaoStock 全量证券资料未返回，AKShare 交易所列表返回 `ProxyError`；当时未冻结候选池。恢复过程及后续来源验证见 [`docs/step_4_5_universe_expansion.md`](docs/step_4_5_universe_expansion.md)。
 
-Step 4.5R 已定位到 Python 的 HTTP/HTTPS/ALL 代理指向无响应的本地端口 9；DNS 正常。BaoStock 0.9.4 的单股基础资料与日期行业查询可成功返回字段，但全量查询在 60 秒/15 秒进程看门狗下超时。AKShare 1.19.1 的两个交易所列表函数经当前代理均为 `ProxyError`。没有使用直连获取清单，也没有本地带官方来源的 CSV/XLS/XLSX 文件可导入。结论仍为 **`metadata_access_still_blocked`**，未冻结候选池；完整逐接口测试结果及恢复条件见同一报告。
+Step 4.5R 当时定位到 Python 的 HTTP/HTTPS/ALL 代理指向无响应的本地端口 9；DNS 正常。BaoStock 0.9.4 的单股基础资料与日期行业查询可成功返回字段，但全量查询在 60 秒/15 秒进程看门狗下超时。AKShare 1.19.1 的两个交易所列表函数经该代理均为 `ProxyError`。该阶段记录为 **`metadata_access_still_blocked`**；此后交易所公开列表在用户授权的项目级直连下获取并冻结候选池。
 
 ## Step 4.5A — Frozen U50 开发期数据状态
 
@@ -135,3 +135,9 @@ Step 4.5A 已完成并通过 U50 data breadth gate（`u50_data_ready`）。冻�
 ## Step 4.5B — Frozen U100 开发期数据状态
 
 Step 4.5B 已通过 U100 数据质量与 breadth gate（`u100_data_ready`）。U100 冻结 hash 为 `05278729087acebc4bddc201f4f0f03068b5781b0c1b56e9377bbd14cecd37e9`，仍为 SSE/SZSE 各 50 只，U50 全部复用、只回填 50 只新增成员。BaoStock none/qfq 两个任务分别 50/50 完成，范围严格为 2018-01-01 至 2023-12-31。有效研究观察 143,911 条；1,684 个 session 为供应商明确报告的 no-trade，缺响应和 unknown gap 均为 0。新数据集 `data/processed/ashare_research_u100_qfq_v1_dev_2018_2023.parquet` 包含 100/100 股票的完整特征和有效目标；1,393 个活动日期中，100% 达到 80 股宽度，96.84% 达到 90 股宽度。qfq 是 100 个不同采集时点的 BaoStock 快照，`mixed_vendor_snapshot_times=true`，不是 point-in-time。未训练模型或运行回测。逐股质量、状态语义、限制和复现命令见 [`docs/step_4_5B_u100_data_validation.md`](docs/step_4_5B_u100_data_validation.md)。
+
+## Step 4.5C — 冻结股票池宽度稳健性
+
+在 `bb66b9a` 的 Step 4.5B 检查点上，`quantlab research breadth-study` 对 U11/U50/U100 分别按固定 Feature v1、五观察期 Raw Target、原 LightGBM 参数进行 2018–2023 三折 Walk-forward。训练前的一致性门禁通过：三个当前数据集的共有样本与特征/标签一致，143,911 条 U100 研究观察均有 BaoStock `tradestatus=1` 证明。旧 Step 4.3 U11 快照保留为历史参考，本轮使用当前 no-trade 规则重新构建 U11。
+
+U100 的 2021/2022/2023 Rank IC 为 `-0.00291 / +0.04668 / -0.00857`，两折为负，预注册结论为 **`breadth_not_supported`**。三池 common-date 比较无日期丢失；anchor-only 诊断、动量/训练均值基线、月/季度 IC、特征重要性及模型重载复现均已保存。详细 Fold 结果和限制见 [`docs/step_4_5C_breadth_robustness.md`](docs/step_4_5C_breadth_robustness.md)。qfq 仍非 PIT，当前名单仍有幸存者偏差；该结论不代表可交易策略表现。

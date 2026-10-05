@@ -32,6 +32,7 @@ from quantlab.research.target_study import run_target_study
 from quantlab.research.targets import DEFAULT_MINIMUM_TARGET_CROSS_SECTION, TARGET_VERSIONS
 from quantlab.research.u100_quality import audit_u100_data
 from quantlab.research.u100_breadth import evaluate_u100_breadth
+from quantlab.research.breadth_study import run_breadth_study, verify_saved_breadth_report
 
 
 def _safe_ticker(ticker: str) -> str:
@@ -199,6 +200,13 @@ def build_parser() -> argparse.ArgumentParser:
     u100_breadth.add_argument("--dataset", required=True)
     u100_breadth.add_argument("--manifest", default=None)
     u100_breadth.add_argument("--output", default="data/processed/ashare_u100_breadth_gate_2018_2023.json")
+    research_commands.add_parser(
+        "breadth-study", help="compare frozen U11/U50/U100 LightGBM on 2018-2023 development folds"
+    )
+    breadth_verify = research_commands.add_parser(
+        "breadth-verify", help="reload saved breadth models on their saved development inputs"
+    )
+    breadth_verify.add_argument("--report", required=True)
 
     model = subparsers.add_parser("model", help="train and inspect research models")
     model_commands = model.add_subparsers(dest="model_command", required=True)
@@ -371,6 +379,15 @@ def _run_research(args) -> None:
         output.write_text(json.dumps(report, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
         print(json.dumps({key: value for key, value in report.items() if key != "coverage_by_symbol"},
                          ensure_ascii=False, default=str, indent=2))
+    elif args.research_command == "breadth-study":
+        result = run_breadth_study()
+        print(json.dumps({"status": result["report"]["status"],
+                          "report_path": result["report_path"],
+                          "experiments": {name: item["experiment_id"]
+                                          for name, item in result["report"]["experiments"].items()}},
+                         ensure_ascii=False, indent=2))
+    elif args.research_command == "breadth-verify":
+        print(json.dumps(verify_saved_breadth_report(Path(args.report)), ensure_ascii=False, indent=2))
 
 
 def _run_model(args) -> None:
